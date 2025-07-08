@@ -3,7 +3,7 @@ import Board from './components/Board/Board.jsx'
 
 const App = () => {
   return (
-    <div className="min-h-screen grid place-content-center bg-black">
+    <div className="min-h-screen grid  bg-black">
       <Board />
     </div>
   )
