@@ -10,6 +10,6 @@
 
 @layer components{
   .tile-size{
-    @apply size-[60px] sm:size-[70px] md:size-[75px]
+    @apply size-[60px] sm:size-[70px] md:size-[73px]
   }
 }

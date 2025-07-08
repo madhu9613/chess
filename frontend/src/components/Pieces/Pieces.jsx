@@ -1,6 +1,6 @@
-import React from 'react'
+import React, { useState } from 'react'
 
-// Import all images dynamically using Vite's import.meta.glob
+// Load images
 const pieces = import.meta.glob('../../assets/pieces/*.png', {
   eager: true,
   import: 'default'
@@ -12,9 +12,7 @@ for (const path in pieces) {
   pieceImages[fileName] = pieces[path]
 }
 
-
-
-// 8x8 position matrix
+// Initial board
 const initialPosition = [
   ['br', 'bn', 'bb', 'bq', 'bk', 'bb', 'bn', 'br'],
   ['bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp'],
@@ -27,23 +25,68 @@ const initialPosition = [
 ]
 
 const Pieces = () => {
+  const [position, setPosition] = useState(initialPosition)
+  const [lastMove, setLastMove] = useState({ from: null, to: null })
+  const [draggingPiece, setDraggingPiece] = useState(null)
+
+  const handleDrop = (e, toRow, toCol) => {
+    e.preventDefault()
+    const data = e.dataTransfer.getData('text/plain')
+    const [fromRow, fromCol] = data.split(',').map(Number)
+
+    if (fromRow === toRow && fromCol === toCol) return
+
+    const piece = position[fromRow][fromCol]
+    const newPosition = position.map(row => [...row])
+    newPosition[fromRow][fromCol] = ''
+    newPosition[toRow][toCol] = piece
+
+    setPosition(newPosition)
+    setLastMove({ from: { row: fromRow, col: fromCol }, to: { row: toRow, col: toCol } })
+    setDraggingPiece(null)
+  }
+
   return (
     <div className="absolute top-0 left-0 w-full h-full grid grid-cols-8 grid-rows-8 pointer-events-none">
-      {initialPosition.map((row, rowIndex) =>
-        row.map((piece, colIndex) => (
-          <div
-            key={`${rowIndex}-${colIndex}`}
-            className="tile-size flex items-center justify-center"
-          >
-            {piece && (
-              <img
-                src={pieceImages[piece]}
-                alt={piece}
-                className="w-[100%] h-[100%] object-contain"
-              />
-            )}
-          </div>
-        ))
+      {position.map((row, rowIndex) =>
+        row.map((piece, colIndex) => {
+          const isFrom =
+            lastMove.from?.row === rowIndex && lastMove.from?.col === colIndex
+          const isTo =
+            lastMove.to?.row === rowIndex && lastMove.to?.col === colIndex
+          const isDragging = draggingPiece === `${rowIndex},${colIndex}`
+
+          const highlightColor = isFrom
+            ? 'bg-green-300/50'
+            : isTo
+              ? 'bg-yellow-300/50'
+              : ''
+
+          return (
+            <div
+              key={`${rowIndex}-${colIndex}`}
+              className={`tile-size flex items-center justify-center ${highlightColor} transition-colors duration-300 border border-red-100`}
+              onDrop={(e) => handleDrop(e, rowIndex, colIndex)}
+              onDragOver={(e) => e.preventDefault()}
+            >
+              {piece && !isDragging && (
+                <img
+                  src={pieceImages[piece]}
+                  alt={piece}
+                  className="w-[85%] h-[85%] object-contain cursor-grab active:cursor-grabbing drop-shadow-lg hover:scale-105 transition-transform duration-150"
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', `${rowIndex},${colIndex}`)
+                    e.dataTransfer.dropEffect = 'move'
+                    setDraggingPiece(`${rowIndex},${colIndex}`)
+                  }}
+                  
+                  onDragEnd={() => setDraggingPiece(null)}
+                />
+              )}
+            </div>
+          )
+        })
       )}
     </div>
   )
