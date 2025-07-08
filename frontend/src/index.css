@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme{
+  --color-lighttile:#F0D8B7;
+  --color-blacktile:#B48764;
+  --color-bg-color:#202020;
+
+
+}
+
+@layer components{
+  .tile-size{
+    @apply size-[60px] sm:size-[70px] md:size-[75px]
+  }
+}
