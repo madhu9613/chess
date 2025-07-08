@@ -2,41 +2,17 @@ import React from 'react';
 import Pieces from '../Pieces/Pieces';
 
 const Board = () => {
-  const rows = Array(8).fill().map((_, i) => 8 - i); // 8 to 1
-  const cols = Array(8).fill().map((_, i) => String.fromCharCode(97 + i)); // a to h
+  const ranks = Array(8).fill().map((_, i) => 8 - i); // 8 to 1
+  const files = Array(8).fill().map((_, i) => String.fromCharCode(97 + i)); // a to h
 
   return (
     <div className="flex flex-col lg:flex-row items-center justify-center gap-8 p-4 min-h-screen bg-gradient-to-br from-stone-100 to-stone-200">
       {/* Board Container */}
       <div className="relative w-fit h-fit rounded-xl overflow-hidden shadow-2xl">
-        {/* Coordinates - Ranks */}
-        <div className="absolute top-0 left-0 h-full flex flex-col-reverse text-stone-700 font-medium">
-          {rows.map((rank) => (
-            <div 
-              key={`rank-${rank}`} 
-              className="tile-size flex items-start justify-center pt-1 text-sm"
-            >
-              {rank}
-            </div>
-          ))}
-        </div>
-
-        {/* Coordinates - Files */}
-        <div className="absolute bottom-0 right-0 w-full flex justify-end text-stone-700 font-medium">
-          {cols.map((file) => (
-            <div 
-              key={`file-${file}`} 
-              className="tile-size flex items-end justify-center pb-1 text-sm"
-            >
-              {file}
-            </div>
-          ))}
-        </div>
-
         {/* Board Grid */}
-        <div className="grid grid-cols-8 grid-rows-8 relative">
-          {rows.map((row, rowIndex) =>
-            cols.map((_, colIndex) => {
+        <div className="grid grid-cols-8 grid-rows-8">
+          {ranks.map((_, rowIndex) =>
+            files.map((_, colIndex) => {
               const isLight = (rowIndex + colIndex) % 2 === 0;
               const tileColor = isLight
                 ? 'bg-[#f0d9b5]'
@@ -50,6 +26,30 @@ const Board = () => {
               );
             })
           )}
+        </div>
+
+        {/* Coordinates - Ranks */}
+        <div className="absolute top-0 left-0 h-full flex flex-col-reverse text-stone-700 font-medium pointer-events-none">
+          {ranks.map((rank) => (
+            <div 
+              key={`rank-${rank}`} 
+              className="tile-size flex items-start justify-center pt-1 text-sm"
+            >
+              {rank}
+            </div>
+          ))}
+        </div>
+
+        {/* Coordinates - Files */}
+        <div className="absolute bottom-0 right-0 w-full flex justify-end text-stone-700 font-medium pointer-events-none">
+          {files.map((file) => (
+            <div 
+              key={`file-${file}`} 
+              className="tile-size flex items-end justify-center pb-1 text-sm"
+            >
+              {file}
+            </div>
+          ))}
         </div>
 
         {/* Piece Layer */}
