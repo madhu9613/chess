@@ -33,7 +33,7 @@ const Board = () => {
           {ranks.map((rank) => (
             <div 
               key={`rank-${rank}`} 
-              className="tile-size flex items-start justify-center pt-1 text-sm"
+              className="tile-size flex items-start justify-start px-2 pt-1 text-xs"
             >
               {rank}
             </div>
@@ -41,11 +41,11 @@ const Board = () => {
         </div>
 
         {/* Coordinates - Files */}
-        <div className="absolute bottom-0 right-0 w-full flex justify-end text-stone-700 font-medium pointer-events-none">
+        <div className="absolute bottom-0 right-0 w-full flex  text-stone-700 font-medium pointer-events-none">
           {files.map((file) => (
             <div 
               key={`file-${file}`} 
-              className="tile-size flex items-end justify-center pb-1 text-sm"
+              className="tile-size flex items-end justify-center pb-1 text-xs"
             >
               {file}
             </div>
