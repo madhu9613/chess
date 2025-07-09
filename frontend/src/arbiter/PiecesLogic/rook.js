@@ -1,38 +1,32 @@
-const getRookMoves = (from, board, turn) => {
+export const getRookMoves = (from, board, turn) => {
+  const moves = [];
   const directions = [
+    { dr: -1, dc: 0 }, // up
+    { dr: 1, dc: 0 },  // down
+    { dr: 0, dc: -1 }, // left
+    { dr: 0, dc: 1 }   // right
+  ];
 
-    // for a rook i have thease four directions allowed and i can jump any number of square its easy so
-    { dR: 0, dC: 1 },  // right
-    { dR: 0, dC: -1 }, // left
-    { dR: 1, dC: 0 },  // down
-    { dR: -1, dC: 0 }  // up
-  ]
-
-  const moves = []
-  for (let { dR, dC } of directions) {
-    let r = from.row + dR
-    let c = from.col + dC
+  for (const { dr, dc } of directions) {
+    let r = from.row + dr;
+    let c = from.col + dc;
 
     while (r >= 0 && r < 8 && c >= 0 && c < 8) {
-       
-        
-      const target = board[r][c]
-      if (!target) {
-        moves.push({ row: r, col: c })
+      const target = board[r][c];
+
+      if (target === '') {
+        moves.push({ row: r, col: c, capture: false });
       } else {
         if (target[0] !== turn) {
-          moves.push({ row: r, col: c }) // capture
+          moves.push({ row: r, col: c, capture: true });
         }
-        break // blocked
+        break; // cannot go beyond any piece
       }
-      r += dR
-      c += dC
+
+      r += dr;
+      c += dc;
     }
   }
-  return moves
-}
 
-export {
-    getRookMoves,
-
-}
+  return moves;
+};

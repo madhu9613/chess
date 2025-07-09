@@ -1,8 +1,7 @@
-// src/components/Board/Pieces.jsx
 import React, { useContext, useState } from 'react'
 import { AppContext } from '../../context/AppContext'
 import { makeNewMove } from '../../reducer/actions/move'
-import { isMoveLegal } from '../../arbiter/arbiter'
+import { getValidMoves } from '../../arbiter/getMoves'
 
 // Load piece images
 const pieces = import.meta.glob('../../assets/pieces/*.png', {
@@ -16,21 +15,14 @@ for (const path in pieces) {
   pieceImages[fileName] = pieces[path]
 }
 
-// Helper to create simple SAN string
-const getSAN = (piece, fromRow, fromCol, toRow, toCol, captured = false) => {
-  const pieceType = piece[1].toUpperCase()
-  const file = String.fromCharCode(97 + toCol)
-  const rank = 8 - toRow
-  const captureSymbol = captured ? 'x' : ''
-  return (pieceType === 'P' ? '' : pieceType) + captureSymbol + file + rank
-}
-
 const Pieces = () => {
   const { appstate, dispatch } = useContext(AppContext)
   const position = appstate.position[appstate.position.length - 1]
 
   const [draggingPiece, setDraggingPiece] = useState(null)
   const [hoveredSquare, setHoveredSquare] = useState(null)
+  const [selectedSquare, setSelectedSquare] = useState(null)
+  const [validMoves, setValidMoves] = useState([])
 
   const handleDrop = (e, toRow, toCol) => {
     e.preventDefault()
@@ -42,37 +34,26 @@ const Pieces = () => {
     if (fromRow === toRow && fromCol === toCol) return
 
     const piece = position[fromRow][fromCol]
-    
-    const pieceColor = piece?.[0] // 'w' or 'b'
-
+    const pieceColor = piece?.[0]
     if (pieceColor !== appstate.turn) return
 
-
-   if (!isMoveLegal({ from: { row: fromRow, col: fromCol }, to: { row: toRow, col: toCol }, board: position, turn: appstate.turn })) {
-  return // Invalid move
-}
     const newPosition = position.map(row => [...row])
     const captured = position[toRow][toCol] !== ''
 
-    // Move the piece
     newPosition[fromRow][fromCol] = ''
     newPosition[toRow][toCol] = piece
 
-    // Create a simple SAN
-    const san = getSAN(piece, fromRow, fromCol, toRow, toCol, captured)
-
-    // Construct move info
     const newMove = {
       from: { row: fromRow, col: fromCol },
       to: { row: toRow, col: toCol },
       piece,
       captured,
-      san
     }
 
-    // Dispatch the move
     dispatch(makeNewMove({ newPosition, newMove }))
     setDraggingPiece(null)
+    setSelectedSquare(null)
+    setValidMoves([])
   }
 
   return (
@@ -88,8 +69,16 @@ const Pieces = () => {
           const highlightColor = isFrom
             ? 'bg-green-300/50'
             : isTo
-            ? 'bg-yellow-300/50'
-            : ''
+              ? 'bg-yellow-300/50'
+              : ''
+
+          const isNormalMove = validMoves.some(
+            m => m.row === rowIndex && m.col === colIndex && !m.capture
+          )
+
+          const isCaptureMove = validMoves.some(
+            m => m.row === rowIndex && m.col === colIndex && m.capture
+          )
 
           return (
             <div
@@ -107,10 +96,18 @@ const Pieces = () => {
                 <img
                   src={pieceImages[piece]}
                   alt={piece}
-                  className={`w-[85%] h-[85%] object-contain cursor-grab ${
-                    isDragging ? 'opacity-60' : 'opacity-100'
-                  }`}
+                  className={`w-[85%] h-[85%] object-contain cursor-pointer ${isDragging ? 'opacity-60' : 'opacity-100'}`}
                   draggable={piece[0] === appstate.turn}
+                  onClick={() => {
+                    if (piece[0] !== appstate.turn) return
+                    setSelectedSquare({ row: rowIndex, col: colIndex })
+                    const moves = getValidMoves(
+                      { row: rowIndex, col: colIndex },
+                      position,
+                      appstate.turn
+                    )
+                    setValidMoves(moves)
+                  }}
                   onDragStart={(e) => {
                     if (piece[0] !== appstate.turn) return
                     e.dataTransfer.setData('text/plain', `${rowIndex},${colIndex}`)
@@ -126,8 +123,17 @@ const Pieces = () => {
                   }}
                 />
               )}
+
               {isHovered && (
                 <div className="absolute inset-0 border-2 border-blue-400 rounded z-10 pointer-events-none"></div>
+              )}
+
+              {isNormalMove && (
+                <div className="w-5 h-5 rounded-full bg-stone-600 opacity-70 z-10 pointer-events-none"></div>
+              )}
+
+              {isCaptureMove && (
+                <div className="absolute inset-0 border-4 border-white rounded z-10 pointer-events-none"></div>
               )}
             </div>
           )

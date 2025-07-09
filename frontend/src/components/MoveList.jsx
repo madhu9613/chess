@@ -45,7 +45,7 @@ const MoveList = () => {
   };
 
   return (
-    <div className="w-full max-w-xs flex flex-col gap-4 min-h-screen">
+    <div className="w-full max-w-xs flex flex-col gap-4 min-h-screen overflow-hidden">
       <div className="bg-stone-800 rounded-xl shadow-xl p-5 text-stone-100">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-amber-300 border-b border-amber-500 pb-2 flex items-center gap-2">
