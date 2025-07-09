@@ -1,4 +1,4 @@
-export const getQueenMoves = (from, board, turn) => {
+export const getKingMoves = (from, board, turn) => {
     const moves = [];
     const directions = [
 
@@ -16,7 +16,7 @@ export const getQueenMoves = (from, board, turn) => {
         let r = from.row + dr;
         let c = from.col + dc;
 
-        while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+        if(r >= 0 && r < 8 && c >= 0 && c < 8) {
             const target = board[r][c];
 
             if (target === '') {
