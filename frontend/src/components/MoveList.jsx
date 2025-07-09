@@ -1,3 +1,4 @@
+// src/components/MoveList.jsx
 import React, { useContext, useRef, useEffect, useState } from 'react';
 import { AppContext } from '../context/AppContext';
 import { makeTakeBack } from '../reducer/actions/move';
@@ -9,15 +10,20 @@ const MoveList = () => {
   const [reversed, setReversed] = useState(false);
   const moveContainerRef = useRef(null);
 
-  // ✅ Compute move pairs
+  // Create move pairs with indices
   const movePairs = [];
   for (let i = 0; i < movesList.length; i += 2) {
-    movePairs.push({
-      white: movesList[i],
-      black: movesList[i + 1],
+    const pair = {
+      white: { ...movesList[i], index: i },
       number: Math.floor(i / 2) + 1
-    });
+    };
+    if (i + 1 < movesList.length) {
+      pair.black = { ...movesList[i + 1], index: i + 1 };
+    }
+    movePairs.push(pair);
   }
+
+  const lastMoveIndex = movesList.length > 0 ? movesList.length - 1 : -1;
 
   useEffect(() => {
     if (moveContainerRef.current) {
@@ -33,16 +39,13 @@ const MoveList = () => {
     dispatch(makeTakeBack());
   };
 
-  const formatMove = (move) => {
-    const fromFile = String.fromCharCode(97 + move.from.col);
-    const fromRank = 8 - move.from.row;
-    const toFile = String.fromCharCode(97 + move.to.col);
-    const toRank = 8 - move.to.row;
-    return `${fromFile}${fromRank} → ${toFile}${toRank}`;
+  // Helper to determine move highlight status
+  const isLastMove = (move) => {
+    return move && move.index === lastMoveIndex;
   };
 
   return (
-    <div className="w-full max-w-xs flex flex-col gap-4">
+    <div className="w-full max-w-xs flex flex-col gap-4 min-h-screen">
       <div className="bg-stone-800 rounded-xl shadow-xl p-5 text-stone-100">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-amber-300 border-b border-amber-500 pb-2 flex items-center gap-2">
@@ -88,11 +91,15 @@ const MoveList = () => {
                   </div>
                   <div className={`col-span-5 rounded p-2 font-medium transition-all ${
                     reversed ? 'bg-stone-700/80 hover:bg-stone-600/90' : 'bg-stone-700 hover:bg-stone-600'
-                  }`}>
+                  } ${isLastMove(pair.white) ? 'ring-2 ring-amber-400' : ''}`}>
                     {pair.white && (
                       <div className="flex items-center gap-2">
                         <span className="bg-stone-600 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold text-amber-300">W</span>
-                        {formatMove(pair.white)}
+                        <span className="font-chess">
+                          {pair.white.san}
+                          {pair.white.checkState === 'check' && <span className="text-amber-400">+</span>}
+                          {pair.white.checkState === 'checkmate' && <span className="text-red-500">#</span>}
+                        </span>
                         {pair.white.captured && (
                           <span className="ml-auto bg-red-500/80 text-xs px-1.5 py-0.5 rounded-full">Capture</span>
                         )}
@@ -101,11 +108,15 @@ const MoveList = () => {
                   </div>
                   <div className={`col-span-5 rounded p-2 font-medium transition-all ${
                     reversed ? 'bg-stone-700/80 hover:bg-stone-600/90' : 'bg-stone-700 hover:bg-stone-600'
-                  }`}>
+                  } ${isLastMove(pair.black) ? 'ring-2 ring-amber-400' : ''}`}>
                     {pair.black && (
                       <div className="flex items-center gap-2">
                         <span className="bg-stone-600 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold text-amber-300">B</span>
-                        {formatMove(pair.black)}
+                        <span className="font-chess">
+                          {pair.black.san}
+                          {pair.black.checkState === 'check' && <span className="text-amber-400">+</span>}
+                          {pair.black.checkState === 'checkmate' && <span className="text-red-500">#</span>}
+                        </span>
                         {pair.black.captured && (
                           <span className="ml-auto bg-red-500/80 text-xs px-1.5 py-0.5 rounded-full">Capture</span>
                         )}

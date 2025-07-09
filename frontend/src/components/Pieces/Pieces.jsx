@@ -1,8 +1,8 @@
 // src/components/Board/Pieces.jsx
 import React, { useContext, useState } from 'react'
 import { AppContext } from '../../context/AppContext'
-import actionTypes from '../../reducer/actionTypes'
 import { makeNewMove } from '../../reducer/actions/move'
+import { isMoveLegal } from '../../arbiter/arbiter'
 
 // Load piece images
 const pieces = import.meta.glob('../../assets/pieces/*.png', {
@@ -14,6 +14,15 @@ const pieceImages = {}
 for (const path in pieces) {
   const fileName = path.split('/').pop().replace('.png', '')
   pieceImages[fileName] = pieces[path]
+}
+
+// Helper to create simple SAN string
+const getSAN = (piece, fromRow, fromCol, toRow, toCol, captured = false) => {
+  const pieceType = piece[1].toUpperCase()
+  const file = String.fromCharCode(97 + toCol)
+  const rank = 8 - toRow
+  const captureSymbol = captured ? 'x' : ''
+  return (pieceType === 'P' ? '' : pieceType) + captureSymbol + file + rank
 }
 
 const Pieces = () => {
@@ -35,22 +44,29 @@ const Pieces = () => {
     const piece = position[fromRow][fromCol]
     const pieceColor = piece?.[0] // 'w' or 'b'
 
-    if (pieceColor !== appstate.turn) {
-      // Invalid move: not this player's turn
-      return
-    }
+    if (pieceColor !== appstate.turn) return
 
+
+   if (!isMoveLegal({ from: { row: fromRow, col: fromCol }, to: { row: toRow, col: toCol }, board: position, turn: appstate.turn })) {
+  return // Invalid move
+}
     const newPosition = position.map(row => [...row])
+    const captured = position[toRow][toCol] !== ''
 
     // Move the piece
     newPosition[fromRow][fromCol] = ''
     newPosition[toRow][toCol] = piece
 
+    // Create a simple SAN
+    const san = getSAN(piece, fromRow, fromCol, toRow, toCol, captured)
+
     // Construct move info
     const newMove = {
       from: { row: fromRow, col: fromCol },
       to: { row: toRow, col: toCol },
-      piece
+      piece,
+      captured,
+      san
     }
 
     // Dispatch the move
