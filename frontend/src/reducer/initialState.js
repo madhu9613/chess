@@ -1,12 +1,14 @@
-// import { Status } from "../constants"
-import { getInitialBoardPosition}  from "../utils.js"
+import { getInitialBoardPosition,Status}  from "../utils.js"
 
 export const initialState = {
-  position: [getInitialBoardPosition],
+  position: [getInitialBoardPosition()],
   movesList: [],
   turn: 'w',
   candidateMoves: [],
-//   status: Status.ongoing,
   promotionSquare: null,
-  castleDirection: { w: null, b: null }
+   status : Status.ongoing,
+  castleDirection : {
+        w : 'both',
+        b : 'both'
+    }, 
 }

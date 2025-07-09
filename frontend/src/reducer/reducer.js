@@ -4,6 +4,8 @@ import actionTypes from "./actionTypes"
 export const reducer = (state, action) => {
   switch (action.type) {
     case actionTypes.NEW_MOVE: {
+        console.log(state);
+        
       const { newPosition, newMove } = action.payload
       return {
         ...state,
