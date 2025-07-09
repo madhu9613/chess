@@ -1,12 +1,16 @@
+import { useContext } from 'react';
 import { getBishapMoves } from './PiecesLogic/bishap';
 import { getKingMoves } from './PiecesLogic/king';
 import { getKnightMoves } from './PiecesLogic/knight';
 import { getPawnMoves } from './PiecesLogic/pawn';
 import { getQueenMoves } from './PiecesLogic/queen';
 import { getRookMoves } from './PiecesLogic/rook';
+import { AppContext } from '../context/AppContext';
 
-export const getValidMoves = (from, board, turn) => {
+export const getValidMoves = (from, board, turn,lastMove) => {
     const piece = board[from.row][from.col];
+   
+
     if (!piece || piece[0] !== turn) return [];
 
     const type = piece[1]; // second letter is piece type (e.g., 'r' for rook)
@@ -21,7 +25,7 @@ export const getValidMoves = (from, board, turn) => {
         case 'n':
              return getKnightMoves(from,board,turn);
         case 'p':
-            return getPawnMoves(from,board,turn);
+            return getPawnMoves(from,board,turn,lastMove);
         
         case 'q':
             return getQueenMoves(from,board,turn);
