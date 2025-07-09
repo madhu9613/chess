@@ -8,6 +8,15 @@ export const makeNewMove = ({ newPosition, newMove }) => {
   };
 };
 
+export const setCandidateMoves = (moves) => ({
+  type: 'SET_CANDIDATE_MOVES',
+  payload: moves
+});
+
+
+
+
+
 export const makeTakeBack = () => ({
   type: actionTypes.TAKE_BACK
 })
