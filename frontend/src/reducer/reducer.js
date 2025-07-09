@@ -38,6 +38,50 @@ export const reducer = (state, action) => {
       };
     }
 
+    case actionTypes.SET_PROMOTION:
+      {
+        return {
+          ...state,
+          promotion: action.payload, // { from, to, piece, captured, san }
+        };
+      }
+
+    case actionTypes.COMPLETE_PROMOTION: {
+  const { to, from, promotedPiece, captured, originalPiece } = action.payload;
+  const newPosition = state.position[state.position.length - 1].map(row => [...row]);
+
+  // Place promoted piece at destination
+  newPosition[from.row][from.col] = '';
+  newPosition[to.row][to.col] = promotedPiece;
+
+  const san = (originalPiece[1] === 'p' ? '' : originalPiece[1].toUpperCase())
+    + (captured ? 'x' : '')
+    + String.fromCharCode(97 + to.col)
+    + (8 - to.row)
+    + '=' + promotedPiece[1].toUpperCase();
+
+  return {
+    ...state,
+    position: [...state.position, newPosition],
+    movesList: [
+      ...state.movesList,
+      {
+        from,
+        to,
+        piece: originalPiece,
+        captured,
+        promotion: true,
+        promotedTo: promotedPiece,
+        san
+      }
+    ],
+    turn: state.turn === 'w' ? 'b' : 'w',
+    promotion: null,
+  };
+}
+
+
+
 
     default:
       return state

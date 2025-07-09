@@ -5,7 +5,7 @@ export const initialState = {
   movesList: [],
   turn: 'w',
   candidateMoves: [],
-  promotionSquare: null,
+  promotion: null,
    status : Status.ongoing,
   castleDirection : {
         w : 'both',
