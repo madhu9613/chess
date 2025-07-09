@@ -1,3 +1,8 @@
+import { getBishapMoves } from './PiecesLogic/bishap';
+import { getKingMoves } from './PiecesLogic/king';
+import { getKnightMoves } from './PiecesLogic/knight';
+import { getPawnMoves } from './PiecesLogic/pawn';
+import { getQueenMoves } from './PiecesLogic/queen';
 import { getRookMoves } from './PiecesLogic/rook';
 
 export const getValidMoves = (from, board, turn) => {
@@ -10,6 +15,19 @@ export const getValidMoves = (from, board, turn) => {
         case 'r':
             return getRookMoves(from, board, turn);
 
+        case 'b':
+            return getBishapMoves(from,board,turn);
+
+        case 'n':
+             return getKnightMoves(from,board,turn);
+        case 'p':
+            return getPawnMoves(from,board,turn);
+        
+        case 'q':
+            return getQueenMoves(from,board,turn);
+        
+        case 'k':
+            return getKingMoves(from,board,turn)
 
         default:
             // For testing: allow moving to any square except own pieces
