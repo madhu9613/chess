@@ -42,6 +42,7 @@ const Pieces = () => {
     if (fromRow === toRow && fromCol === toCol) return
 
     const piece = position[fromRow][fromCol]
+    
     const pieceColor = piece?.[0] // 'w' or 'b'
 
     if (pieceColor !== appstate.turn) return

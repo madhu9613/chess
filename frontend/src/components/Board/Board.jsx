@@ -39,7 +39,7 @@ const Board = () => {
  
 
   return (
-    <div className="flex flex-col lg:flex-row items-center justify-center gap-8 p-4 min-h-screen bg-gradient-to-br from-stone-100 to-stone-200">
+    <div className="flex flex-col lg:flex-row items-center justify-center gap-8 p-4 min-h-screen bg-gradient-to-br from-stone-100 to-stone-500">
       {/* Chessboard */}
       <div className="relative w-fit h-fit rounded-xl overflow-hidden shadow-2xl">
         <div className="grid grid-cols-8 grid-rows-8">

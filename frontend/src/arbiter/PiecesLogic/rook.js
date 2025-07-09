@@ -1,17 +1,21 @@
 const getRookMoves = (from, board, turn) => {
   const directions = [
-    { dRow: 0, dCol: 1 },  // right
-    { dRow: 0, dCol: -1 }, // left
-    { dRow: 1, dCol: 0 },  // down
-    { dRow: -1, dCol: 0 }  // up
+
+    // for a rook i have thease four directions allowed and i can jump any number of square its easy so
+    { dR: 0, dC: 1 },  // right
+    { dR: 0, dC: -1 }, // left
+    { dR: 1, dC: 0 },  // down
+    { dR: -1, dC: 0 }  // up
   ]
 
   const moves = []
-  for (let { dRow, dCol } of directions) {
-    let r = from.row + dRow
-    let c = from.col + dCol
+  for (let { dR, dC } of directions) {
+    let r = from.row + dR
+    let c = from.col + dC
 
     while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+       
+        
       const target = board[r][c]
       if (!target) {
         moves.push({ row: r, col: c })
@@ -21,8 +25,8 @@ const getRookMoves = (from, board, turn) => {
         }
         break // blocked
       }
-      r += dRow
-      c += dCol
+      r += dR
+      c += dC
     }
   }
   return moves
@@ -30,5 +34,5 @@ const getRookMoves = (from, board, turn) => {
 
 export {
     getRookMoves,
-    
+
 }
