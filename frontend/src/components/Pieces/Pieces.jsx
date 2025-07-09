@@ -16,7 +16,6 @@ for (const path in pieces) {
   pieceImages[fileName] = pieces[path];
 }
 
-// Simple SAN generation
 const getSAN = (piece, fromRow, fromCol, toRow, toCol, captured = false) => {
   const pieceType = piece[1].toUpperCase();
   const file = String.fromCharCode(97 + toCol);
@@ -96,18 +95,27 @@ const Pieces = () => {
           const isFrom = lastMove?.from?.row === rowIndex && lastMove?.from?.col === colIndex;
           const isTo = lastMove?.to?.row === rowIndex && lastMove?.to?.col === colIndex;
 
-          const highlightColor = isFrom
-            ? 'bg-green-300/50'
-            : isTo
-            ? 'bg-yellow-300/50'
-            : '';
-
           const isNormalMove = validMoves.some(
             m => m.row === rowIndex && m.col === colIndex && !m.capture
           );
           const isCaptureMove = validMoves.some(
             m => m.row === rowIndex && m.col === colIndex && m.capture
           );
+
+          const isSelected =
+            selectedSquare?.row === rowIndex && selectedSquare?.col === colIndex;
+
+          const isOwnTurnPiece = piece && piece[0] === appstate.turn;
+
+          const highlightColor =
+            isSelected && isOwnTurnPiece
+              ? 'bg-blue-400/40'
+              : isFrom
+                ? 'bg-green-300/50'
+                : isTo
+                  ? 'bg-yellow-300/50'
+                  : '';
+
 
           return (
             <div
@@ -122,20 +130,21 @@ const Pieces = () => {
               onDragLeave={() => setHoveredSquare(null)}
               onClick={() => {
                 if (selectedSquare) {
-                  handleMove(
-                    selectedSquare.row,
-                    selectedSquare.col,
-                    rowIndex,
-                    colIndex
-                  );
-                } else if (piece && piece[0] === appstate.turn) {
-                  const moves = getValidMoves(
-                    { row: rowIndex, col: colIndex },
-                    position,
-                    appstate.turn
-                  );
-                  dispatch(setCandidateMoves(moves));
-                  setSelectedSquare({ row: rowIndex, col: colIndex });
+                  handleMove(selectedSquare.row, selectedSquare.col, rowIndex, colIndex);
+                } else if (piece) {
+                  // highlight moves only for your turn
+                  if (piece[0] === appstate.turn) {
+                    const moves = getValidMoves(
+                      { row: rowIndex, col: colIndex },
+                      position,
+                      appstate.turn
+                    );
+                    dispatch(setCandidateMoves(moves));
+                    setSelectedSquare({ row: rowIndex, col: colIndex });
+                  } else {
+                    // just select, no moves shown
+                    setSelectedSquare({ row: rowIndex, col: colIndex });
+                  }
                 }
               }}
             >
@@ -143,21 +152,24 @@ const Pieces = () => {
                 <img
                   src={pieceImages[piece]}
                   alt={piece}
-                  className={`w-[85%] h-[85%] object-contain cursor-grab ${
-                    isDragging ? 'opacity-60' : 'opacity-100'
-                  }`}
-                  draggable={piece[0] === appstate.turn}
+                  className={`w-[98%] h-[98%] object-contain cursor-grab ${isDragging ? 'opacity-60' : 'opacity-100'
+                    }`}
+                  draggable
                   onDragStart={e => {
-                    if (piece[0] !== appstate.turn) return;
                     e.dataTransfer.setData('text/plain', `${rowIndex},${colIndex}`);
                     setDraggingPiece(`${rowIndex},${colIndex}`);
 
-                    const moves = getValidMoves(
-                      { row: rowIndex, col: colIndex },
-                      position,
-                      appstate.turn
-                    );
-                    dispatch(setCandidateMoves(moves));
+                    if (piece[0] === appstate.turn) {
+                      const moves = getValidMoves(
+                        { row: rowIndex, col: colIndex },
+                        position,
+                        appstate.turn
+                      );
+                      dispatch(setCandidateMoves(moves));
+                    } else {
+                      dispatch(setCandidateMoves([]));
+                    }
+
                     setSelectedSquare({ row: rowIndex, col: colIndex });
 
                     setTimeout(() => {
@@ -180,7 +192,7 @@ const Pieces = () => {
                 <div className="w-4 h-4 rounded-full bg-stone-800 opacity-70 z-10 pointer-events-none"></div>
               )}
               {isCaptureMove && (
-                <div className="absolute inset-0 border-2 border-white rounded z-10 pointer-events-none"></div>
+                <div className="absolute inset-0 border-2 border-amber-600 rounded z-10 pointer-events-none"></div>
               )}
             </div>
           );
