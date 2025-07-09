@@ -2,55 +2,58 @@
 import React, { useContext, useRef, useEffect, useState } from 'react';
 import Pieces from '../Pieces/Pieces';
 import { AppContext } from '../../context/AppContext';
-import { makeTakeBack } from '../../reducer/actions/move';
 import MoveList from '../MoveList';
 
 const Board = () => {
-  const ranks = Array(8).fill().map((_, i) => 8 - i);
-  const files = Array(8).fill().map((_, i) => String.fromCharCode(97 + i));
-  const { appstate, dispatch } = useContext(AppContext);
+  const { appstate } = useContext(AppContext);
   const movesList = appstate.movesList;
 
-  const [reversed, setReversed] = useState(false);
+  const [playAs, setPlayAs] = useState('white');
   const moveContainerRef = useRef(null);
+
+  const reversed = playAs === 'black';
+  const ranks = reversed ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
+  const files = reversed 
+    ? ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a'] 
+    : ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 
   useEffect(() => {
     if (moveContainerRef.current) {
-      if (reversed) {
-        moveContainerRef.current.scrollTop = 0;
-      } else {
-        moveContainerRef.current.scrollTop = moveContainerRef.current.scrollHeight;
-      }
+      moveContainerRef.current.scrollTop = moveContainerRef.current.scrollHeight;
     }
-  }, [movesList, reversed]);
-
-  // Format move notation
-  
-  // Group moves into pairs
-  const movePairs = [];
-  for (let i = 0; i < movesList.length; i += 2) {
-    movePairs.push({
-      white: movesList[i],
-      black: movesList[i + 1],
-      number: Math.floor(i / 2) + 1
-    });
-  }
-
- 
+  }, [movesList]);
 
   return (
     <div className="flex flex-col lg:flex-row items-center justify-center gap-8 p-4 min-h-screen bg-gradient-to-br from-stone-100 to-stone-500">
+
+      {/* Color Switch Dropdown */}
+      <div className="absolute top-4 right-4 bg-white rounded shadow px-4 py-2">
+        <label className="mr-2 font-medium">Play as:</label>
+        <select
+          value={playAs}
+          onChange={(e) => setPlayAs(e.target.value)}
+          className="border border-gray-300 rounded px-2 py-1 text-sm"
+        >
+          <option value="white">White</option>
+          <option value="black">Black</option>
+        </select>
+      </div>
+
       {/* Chessboard */}
       <div className="relative w-fit h-fit rounded-xl overflow-hidden shadow-2xl">
         <div className="grid grid-cols-8 grid-rows-8">
-          {ranks.map((_, rowIndex) =>
-            files.map((_, colIndex) => {
-              const isLight = (rowIndex + colIndex) % 2 === 0;
+          {Array(8).fill().map((_, rowIdx) =>
+            Array(8).fill().map((_, colIdx) => {
+              // Calculate logical coordinates
+              const logicalRow = reversed ? 7 - rowIdx : rowIdx;
+              const logicalCol = reversed ? 7 - colIdx : colIdx;
+              
+              const isLight = (logicalRow + logicalCol) % 2 === 0;
               const tileColor = isLight ? 'bg-[#e0d9b5]' : 'bg-[#b58863]';
 
               return (
                 <div
-                  key={`${rowIndex}-${colIndex}`}
+                  key={`${rowIdx}-${colIdx}`}
                   className={`tile-size ${tileColor} transition-colors duration-300`}
                 />
               );
@@ -59,8 +62,8 @@ const Board = () => {
         </div>
 
         {/* Coordinates - Ranks */}
-        <div className="absolute top-0 left-0 h-full flex flex-col-reverse text-stone-700 font-medium pointer-events-none">
-          {ranks.map((rank) => (
+        <div className="absolute top-0 left-0 h-full flex flex-col text-stone-700 font-medium pointer-events-none">
+          {ranks.map((rank, idx) => (
             <div
               key={`rank-${rank}`}
               className="tile-size flex items-start justify-start px-2 pt-1 text-xs"
@@ -83,11 +86,11 @@ const Board = () => {
         </div>
 
         {/* Piece Layer */}
-        <Pieces />
+        <Pieces reversed={reversed} />
       </div>
 
       {/* Move History Panel */}
-      <MoveList />
+      <MoveList ref={moveContainerRef} />
     </div>
   );
 };
