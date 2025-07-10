@@ -7,11 +7,13 @@ import {
   setCheckmate,
   setStalemate
 } from '../../reducer/actions/move';
-import { getValidMoves } from '../../arbiter/getMoves';
 import PromoteModal from '../PromoteModal';
 import { pieceImages, getSAN, isSquareAttacked } from '../../utils';
 import { getAllLegalMoves } from '../../arbiter/getAlllegalMoves';
 import GameOverModal from '../../GameOverModal.jsx'; // ✅ Ensure this is correctly imported
+import actionTypes from '../../reducer/actionTypes.js';
+
+
 
 const Pieces = ({ reversed }) => {
   const { appstate, dispatch } = useContext(AppContext);
@@ -21,6 +23,7 @@ const Pieces = ({ reversed }) => {
   const [hoveredSquare, setHoveredSquare] = useState(null);
   const [selectedSquare, setSelectedSquare] = useState(null);
   const lastMove = useMemo(() => appstate.movesList[appstate.movesList.length - 1], [appstate.movesList]);
+  const [hideModal, setHideModal] = useState(false);
 
   const [candidateNormalMoves, candidateCaptureMoves] = useMemo(() => {
     const normal = Array(8).fill().map(() => Array(8).fill(false));
@@ -142,9 +145,38 @@ const Pieces = ({ reversed }) => {
 
   const displayBoard = reversed ? [...position].reverse().map(row => [...row].reverse()) : position;
 
-  // Stub handlers (replace with actual logic)
-  const resetGame = () => window.location.reload(); // or implement proper reset
-  const replayGame = () => alert("Replay not implemented yet");
+  const resetGame = () => window.location.reload();
+
+  const replayGame = () => {
+    if (!appstate.gameHistory.length) return;
+
+    // 🧹 Clean up game over flags
+    dispatch(setCheckmate(null));
+    dispatch(setStalemate(false)); // FIX: Use false instead of null
+
+    // 🔁 Reset board to beginning
+    dispatch({
+      type: actionTypes.RESET_FOR_REPLAY,
+      payload: {
+        gameHistory: appstate.gameHistory
+      }
+    });
+
+    let index = 0;
+
+    const interval = setInterval(() => {
+      if (index >= appstate.gameHistory.length) {
+        clearInterval(interval);
+        return;
+      }
+
+      const { position, move } = appstate.gameHistory[index];
+      dispatch(makeNewMove({ newPosition: position, newMove: move }));
+      index++;
+    }, 600); // You can adjust the speed here
+  };
+
+
 
   return (
     <>
@@ -166,9 +198,9 @@ const Pieces = ({ reversed }) => {
             const highlightColor =
               isKingInCheck ? 'border-4 border-red-500'
                 : isSelected && isOwnTurnPiece ? 'bg-blue-400/40'
-                : isFrom ? 'bg-green-300/50'
-                : isTo ? 'bg-yellow-300/50'
-                : '';
+                  : isFrom ? 'bg-green-300/50'
+                    : isTo ? 'bg-yellow-300/50'
+                      : '';
 
             return (
               <div
@@ -219,8 +251,10 @@ const Pieces = ({ reversed }) => {
           loser={appstate.isCheckmate}
           onNewGame={resetGame}
           onReplay={replayGame}
+          onCancel={() => setHideModal(true)} 
         />
       )}
+
     </>
   );
 };

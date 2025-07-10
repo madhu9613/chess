@@ -6,11 +6,13 @@ export const reducer = (state, action) => {
     case actionTypes.NEW_MOVE: {
       console.log(state);
       const { newPosition, newMove } = action.payload
+      const newHistory = [...state.gameHistory, { position: newPosition, move: newMove }];
       return {
         ...state,
         position: [...state.position, newPosition],
         movesList: [...state.movesList, newMove],
-        turn: state.turn === 'w' ? 'b' : 'w'
+        turn: state.turn === 'w' ? 'b' : 'w',
+        gameHistory: newHistory
       }
     }
 
@@ -91,7 +93,6 @@ export const reducer = (state, action) => {
       const { to, from, promotedPiece, captured, originalPiece } = action.payload;
       const newPosition = state.position[state.position.length - 1].map(row => [...row]);
 
-      // Place promoted piece at destination
       newPosition[from.row][from.col] = '';
       newPosition[to.row][to.col] = promotedPiece;
 
@@ -101,25 +102,28 @@ export const reducer = (state, action) => {
         + (8 - to.row)
         + '=' + promotedPiece[1].toUpperCase();
 
+      const move = {
+        from,
+        to,
+        piece: originalPiece,
+        captured,
+        promotion: true,
+        promotedTo: promotedPiece,
+        san
+      };
+
+      const newHistory = [...state.gameHistory, { position: newPosition, move }];
+
       return {
         ...state,
         position: [...state.position, newPosition],
-        movesList: [
-          ...state.movesList,
-          {
-            from,
-            to,
-            piece: originalPiece,
-            captured,
-            promotion: true,
-            promotedTo: promotedPiece,
-            san
-          }
-        ],
+        movesList: [...state.movesList, move],
         turn: state.turn === 'w' ? 'b' : 'w',
         promotion: null,
+        gameHistory: newHistory
       };
     }
+
 
     case actionTypes.SET_CHECK_STATUS: {
       return {
@@ -137,6 +141,20 @@ export const reducer = (state, action) => {
       return {
         ...state,
         isStalemate: true
+      };
+
+    case actionTypes.RESET_FOR_REPLAY:
+      return {
+        ...state,
+        position: [state.position[0]], // Start from initial position
+        movesList: [],
+        turn: 'w',
+        isCheckmate: null,
+        isStalemate: false,
+        isCheck: {},
+        promotion: null,
+        candidateMoves: [],
+        gameHistory: action.payload.gameHistory,
       };
 
 

@@ -11,6 +11,7 @@ export const initialState = {
   w: { kingSide: true, queenSide: true },
   b: { kingSide: true, queenSide: true }
 },
-isCheck: { w: false, b: false }
+isCheck: { w: false, b: false },
+ gameHistory: [],
 
 }
