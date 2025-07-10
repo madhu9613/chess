@@ -41,16 +41,16 @@ export const getSAN = (piece, fromRow, fromCol, toRow, toCol, captured = false, 
 };
 
 
-export const isSquareAttacked = (square, board, byColor) => {
+
+export const isSquareAttacked = (square, board, byColor, lastMove, castlingRights) => {
   for (let row = 0; row < 8; row++) {
     for (let col = 0; col < 8; col++) {
       const piece = board[row][col];
       if (piece && piece[0] === byColor) {
-        const type = piece[1];
+        if (piece[1] === 'k') continue; // Skip enemy king
 
-        if (type === 'k') continue;
+        const moves = getValidMoves({ row, col }, board, byColor, lastMove, castlingRights);
 
-        const moves = getValidMoves({ row, col }, board, byColor);
         if (moves.some(m => m.row === square.row && m.col === square.col)) {
           return true;
         }
