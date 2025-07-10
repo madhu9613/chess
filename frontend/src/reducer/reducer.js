@@ -121,6 +121,26 @@ export const reducer = (state, action) => {
       };
     }
 
+    case actionTypes.SET_CHECK_STATUS: {
+      return {
+        ...state,
+        isCheck: action.payload
+      };
+    }
+    case actionTypes.CHECKMATE:
+      return {
+        ...state,
+        isCheckmate: action.payload // 'w' or 'b'
+      };
+
+    case actionTypes.STALEMATE:
+      return {
+        ...state,
+        isStalemate: true
+      };
+
+
+
 
 
 
