@@ -1,18 +1,7 @@
 // src/components/PromoteModal.jsx
 import React, { useContext } from 'react';
 import { AppContext } from '../context/AppContext';
-
-const pieces = import.meta.glob('../assets/pieces/*.png', {
-  eager: true,
-  import: 'default'
-});
-
-const pieceImages = {};
-for (const path in pieces) {
-  const fileName = path.split('/').pop().replace('.png', '');
-  pieceImages[fileName] = pieces[path];
-}
-
+import { pieceImages } from '../utils';
 const PromoteModal = () => {
   const { appstate, dispatch } = useContext(AppContext);
   const promotion = appstate.promotion;

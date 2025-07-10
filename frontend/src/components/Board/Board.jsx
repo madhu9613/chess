@@ -25,14 +25,13 @@ const Board = () => {
 
   return (
     <div className="flex flex-col lg:flex-row items-center justify-center gap-8 p-4 min-h-screen bg-gradient-to-br from-stone-100 to-stone-500">
-
       {/* Color Switch Dropdown */}
-      <div className="absolute top-4 right-4 bg-white rounded shadow px-4 py-2">
-        <label className="mr-2 font-medium">Play as:</label>
+      <div className="absolute top-4 right-4 bg-white/80 backdrop-blur-md border border-gray-300 rounded-lg shadow-lg px-4 py-2">
+        <label className="mr-2 font-semibold text-stone-700">Play as:</label>
         <select
           value={playAs}
           onChange={(e) => setPlayAs(e.target.value)}
-          className="border border-gray-300 rounded px-2 py-1 text-sm"
+          className="border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
         >
           <option value="white">White</option>
           <option value="black">Black</option>
@@ -40,21 +39,19 @@ const Board = () => {
       </div>
 
       {/* Chessboard */}
-      <div className="relative w-fit h-fit rounded-xl overflow-hidden shadow-2xl">
+      <div className="relative w-fit h-fit rounded-2xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.25)] ring-1 ring-white/20">
         <div className="grid grid-cols-8 grid-rows-8">
           {Array(8).fill().map((_, rowIdx) =>
             Array(8).fill().map((_, colIdx) => {
-              // Calculate logical coordinates
               const logicalRow = reversed ? 7 - rowIdx : rowIdx;
               const logicalCol = reversed ? 7 - colIdx : colIdx;
-              
               const isLight = (logicalRow + logicalCol) % 2 === 0;
               const tileColor = isLight ? 'bg-[#e0d9b5]' : 'bg-[#b58863]';
 
               return (
                 <div
                   key={`${rowIdx}-${colIdx}`}
-                  className={`tile-size ${tileColor} transition-colors duration-300`}
+                  className={`tile-size ${tileColor} transition-colors duration-300 hover:brightness-110`}
                 />
               );
             })
@@ -63,7 +60,7 @@ const Board = () => {
 
         {/* Coordinates - Ranks */}
         <div className="absolute top-0 left-0 h-full flex flex-col text-stone-700 font-medium pointer-events-none">
-          {ranks.map((rank, idx) => (
+          {ranks.map((rank,) => (
             <div
               key={`rank-${rank}`}
               className="tile-size flex items-start justify-start px-2 pt-1 text-xs"

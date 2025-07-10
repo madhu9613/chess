@@ -4,26 +4,9 @@ import { AppContext } from '../../context/AppContext';
 import { makeNewMove, setCandidateMoves } from '../../reducer/actions/move';
 import { getValidMoves } from '../../arbiter/getMoves';
 import PromoteModal from '../PromoteModal';
+import { pieceImages } from '../../utils';
+import { getSAN } from '../../utils';
 
-const pieces = import.meta.glob('../../assets/pieces/*.png', {
-  eager: true,
-  import: 'default'
-});
-
-const pieceImages = {};
-for (const path in pieces) {
-  const fileName = path.split('/').pop().replace('.png', '');
-  pieceImages[fileName] = pieces[path];
-}
-
-const getSAN = (piece, fromRow, fromCol, toRow, toCol, captured = false, promotion = null) => {
-  const pieceType = piece[1].toUpperCase();
-  const file = String.fromCharCode(97 + toCol);
-  const rank = 8 - toRow;
-  const captureSymbol = captured ? 'x' : '';
-  const promoSuffix = promotion ? `=${promotion.toUpperCase()}` : '';
-  return (pieceType === 'P' ? '' : pieceType) + captureSymbol + file + rank + promoSuffix;
-};
 
 const Pieces = ({ reversed }) => {
   const { appstate, dispatch } = useContext(AppContext);
@@ -33,7 +16,6 @@ const Pieces = ({ reversed }) => {
   const [draggingPiece, setDraggingPiece] = useState(null);
   const [hoveredSquare, setHoveredSquare] = useState(null);
   const [selectedSquare, setSelectedSquare] = useState(null);
-  const [promotion, setPromotion] = useState(null);
 
   const [candidateNormalMoves, candidateCaptureMoves] = useMemo(() => {
     const normal = Array(8).fill().map(() => Array(8).fill(false));
@@ -53,48 +35,61 @@ const Pieces = ({ reversed }) => {
     [appstate.movesList]
   );
 
-  
+const handleMove = useCallback((fromRow, fromCol, toRow, toCol) => {
+  const piece = position[fromRow][fromCol];
+  if (!piece || piece[0] !== appstate.turn) return;
 
-  const handleMove = useCallback((fromRow, fromCol, toRow, toCol) => {
-    const piece = position[fromRow][fromCol];
-    if (!piece || piece[0] !== appstate.turn) return;
+  const move = validMoves.find(m => m.row === toRow && m.col === toCol);
+  if (!move) return;
 
-    const move = validMoves.find(m => m.row === toRow && m.col === toCol);
-    if (!move) return;
+  // 🏰 CASTLING HANDLER
+  if (move.castle) {
+    dispatch({
+      type: 'CASTLING_MOVE',
+      payload: {
+        castle: move.castle,
+        color: appstate.turn
+      }
+    });
+    dispatch(setCandidateMoves([]));
+    setSelectedSquare(null);
+    return;
+  }
 
-   // Inside handleMove
-if (move.promotion) {
-  dispatch({
-    type: 'SET_PROMOTION',
-    payload: {
-      from: { row: fromRow, col: fromCol },
-      to: { row: toRow, col: toCol },
-      piece,
-      captured: move.capture || false
-    }
-  });
-  return;
-}
-
-
-    const newPosition = position.map(row => [...row]);
-    newPosition[fromRow][fromCol] = '';
-    newPosition[toRow][toCol] = piece;
-
-    dispatch(makeNewMove({
-      newPosition,
-      newMove: {
+  // ♟️ PROMOTION HANDLER
+  if (move.promotion) {
+    dispatch({
+      type: 'SET_PROMOTION',
+      payload: {
         from: { row: fromRow, col: fromCol },
         to: { row: toRow, col: toCol },
         piece,
-        captured: move.capture || false,
-        san: getSAN(piece, fromRow, fromCol, toRow, toCol, move.capture)
+        captured: move.capture || false
       }
-    }));
+    });
+    return;
+  }
 
-    dispatch(setCandidateMoves([]));
-    setSelectedSquare(null);
-  }, [position, appstate.turn, validMoves, dispatch]);
+  // 🧠 NORMAL MOVE
+  const newPosition = position.map(row => [...row]);
+  newPosition[fromRow][fromCol] = '';
+  newPosition[toRow][toCol] = piece;
+
+  dispatch(makeNewMove({
+    newPosition,
+    newMove: {
+      from: { row: fromRow, col: fromCol },
+      to: { row: toRow, col: toCol },
+      piece,
+      captured: move.capture || false,
+      san: getSAN(piece, fromRow, fromCol, toRow, toCol, move.capture)
+    }
+  }));
+
+  dispatch(setCandidateMoves([]));
+  setSelectedSquare(null);
+}, [position, appstate.turn, validMoves, dispatch]);
+
 
   const handleDrop = useCallback((e, toRow, toCol) => {
     e.preventDefault();
@@ -115,14 +110,14 @@ if (move.promotion) {
         handleMove(selectedSquare.row, selectedSquare.col, rowIndex, colIndex);
       }
     } else if (piece && piece[0] === appstate.turn) {
-      const moves = getValidMoves({ row: rowIndex, col: colIndex }, position, appstate.turn, lastMove);
+      const moves = getValidMoves({ row: rowIndex, col: colIndex }, position, appstate.turn, lastMove, appstate.castlingRights);
       dispatch(setCandidateMoves(moves));
       setSelectedSquare({ row: rowIndex, col: colIndex });
     } else {
       dispatch(setCandidateMoves([]));
       setSelectedSquare(null);
     }
-  }, [selectedSquare, appstate.turn, position, dispatch, handleMove, lastMove]);
+  }, [selectedSquare, appstate.turn, position, dispatch, handleMove, lastMove, appstate.castlingRights]);
 
   const displayBoard = reversed ? [...position].reverse().map(row => [...row].reverse()) : position;
 
@@ -147,9 +142,9 @@ if (move.promotion) {
 
             const highlightColor =
               isSelected && isOwnTurnPiece ? 'bg-blue-400/40'
-              : isFrom ? 'bg-green-300/50'
-              : isTo ? 'bg-yellow-300/50'
-              : '';
+                : isFrom ? 'bg-green-300/50'
+                  : isTo ? 'bg-yellow-300/50'
+                    : '';
 
             return (
               <div
@@ -178,8 +173,11 @@ if (move.promotion) {
                         const moves = getValidMoves(
                           { row: actualRow, col: actualCol },
                           position,
-                          appstate.turn
+                          appstate.turn,
+                          lastMove,
+                          appstate.castlingRights 
                         );
+
                         dispatch(setCandidateMoves(moves));
                       } else {
                         dispatch(setCandidateMoves([]));
@@ -213,6 +211,7 @@ if (move.promotion) {
           })
         )}
       </div>
+
       {appstate.promotion && <PromoteModal />}
 
     </>
