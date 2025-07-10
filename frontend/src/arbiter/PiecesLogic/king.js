@@ -1,27 +1,53 @@
-export const getKingMoves = (from, board, turn) => {
+// PiecesLogic/king.js
+import { isSquareAttacked } from '../../utils.js'; // Create this to check for threats
+
+export const getKingMoves = (from, board, turn, castlingRights) => {
   const moves = [];
   const directions = [
-    { dr: -1, dc: 0 },
-    { dr: 1, dc: 0 },
-    { dr: 0, dc: -1 },
-    { dr: 0, dc: 1 },
-    { dr: 1, dc: 1 },
-    { dr: 1, dc: -1 },
-    { dr: -1, dc: 1 },
-    { dr: -1, dc: -1 }
+    [-1, -1], [-1, 0], [-1, 1],
+    [0, -1],           [0, 1],
+    [1, -1],  [1, 0],  [1, 1]
   ];
 
-  for (const { dr, dc } of directions) {
-    const r = from.row + dr;
-    const c = from.col + dc;
+  for (const [dx, dy] of directions) {
+    const row = from.row + dx;
+    const col = from.col + dy;
 
-    if (r >= 0 && r < 8 && c >= 0 && c < 8) {
-      const target = board[r][c];
-      if (target === '') {
-        moves.push({ row: r, col: c, capture: false });
-      } else if (target[0] !== turn) {
-        moves.push({ row: r, col: c, capture: true });
-      }
+    if (row < 0 || row > 7 || col < 0 || col > 7) continue;
+
+    const targetPiece = board[row][col];
+    if (!targetPiece || targetPiece[0] !== turn) {
+      moves.push({ row, col, capture: !!targetPiece });
+    }
+  }
+
+  const row = turn === 'w' ? 7 : 0;
+  const enemy = turn === 'w' ? 'b' : 'w';
+
+  if (from.row === row && from.col === 4) {
+    // King-side castling
+    if (
+      castlingRights[turn].kingSide &&
+      !board[row][5] && 
+      !board[row][6] &&
+      !isSquareAttacked({ row, col: 4 }, board, enemy) &&
+      !isSquareAttacked({ row, col: 5 }, board, enemy) &&
+      !isSquareAttacked({ row, col: 6 }, board, enemy)
+    ) {
+      moves.push({ row, col: 6, castle: 'kingSide' });
+    }
+
+    // Queen-side castling
+    if (
+      castlingRights[turn].queenSide &&
+      !board[row][3] && 
+      !board[row][2] && 
+      !board[row][1] &&
+      !isSquareAttacked({ row, col: 4 }, board, enemy) &&
+      !isSquareAttacked({ row, col: 3 }, board, enemy) &&
+      !isSquareAttacked({ row, col: 2 }, board, enemy)
+    ) {
+      moves.push({ row, col: 2, castle: 'queenSide' });
     }
   }
 
