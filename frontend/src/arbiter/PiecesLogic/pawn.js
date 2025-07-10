@@ -42,12 +42,14 @@ export const getPawnMoves = (from, board, turn, lastMove = null) => {
   if (from.row === enPassantRow && lastMove) {
     const { from: lastFrom, to: lastTo, piece: lastPiece } = lastMove;
 
-    if (
-      lastPiece[1] === 'p' &&
-      Math.abs(lastFrom.row - lastTo.row) === 2 &&
-      Math.abs(lastTo.col - from.col) === 1 &&
-      lastTo.row === from.row
-    ) {
+   if (
+  lastPiece &&
+  lastPiece[1] === 'p' &&
+  Math.abs(lastFrom.row - lastTo.row) === 2 &&
+  Math.abs(lastTo.col - from.col) === 1 &&
+  lastTo.row === from.row
+)
+ {
       moves.push({
         row: from.row + direction,
         col: lastTo.col,
