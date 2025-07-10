@@ -7,8 +7,9 @@ export const initialState = {
   candidateMoves: [],
   promotion: null,
    status : Status.ongoing,
-  castleDirection : {
-        w : 'both',
-        b : 'both'
-    }, 
+  castlingRights: {
+  w: { kingSide: true, queenSide: true },
+  b: { kingSide: true, queenSide: true }
+}
+
 }
