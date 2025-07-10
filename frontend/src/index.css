@@ -12,4 +12,13 @@
   .tile-size{
     @apply size-[60px] sm:size-[70px] md:size-[73px]
   }
+  @keyframes fade-in {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out forwards;
+}
+
 }

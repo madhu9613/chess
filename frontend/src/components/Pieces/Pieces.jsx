@@ -1,4 +1,3 @@
-// ✅ Fixed version of Pieces.jsx with full check, checkmate, stalemate detection
 import React, { useContext, useState, useMemo, useCallback, useEffect } from 'react';
 import { AppContext } from '../../context/AppContext';
 import {
@@ -12,6 +11,7 @@ import { getValidMoves } from '../../arbiter/getMoves';
 import PromoteModal from '../PromoteModal';
 import { pieceImages, getSAN, isSquareAttacked } from '../../utils';
 import { getAllLegalMoves } from '../../arbiter/getAlllegalMoves';
+import GameOverModal from '../../GameOverModal.jsx'; // ✅ Ensure this is correctly imported
 
 const Pieces = ({ reversed }) => {
   const { appstate, dispatch } = useContext(AppContext);
@@ -71,6 +71,7 @@ const Pieces = ({ reversed }) => {
     setSelectedSquare(null);
   }, [position, appstate, validMoves, dispatch]);
 
+  // Check checkmate/stalemate on every board update
   useEffect(() => {
     const board = appstate.position[appstate.position.length - 1];
     const enemyColor = appstate.turn;
@@ -98,7 +99,12 @@ const Pieces = ({ reversed }) => {
 
     dispatch(setCheckStatus({ ...appstate.isCheck, [enemyColor]: inCheck }));
 
-    const legalMoves = getAllLegalMoves(board, enemyColor, appstate.movesList[appstate.movesList.length - 1], appstate.castlingRights);
+    const legalMoves = getAllLegalMoves(
+      board,
+      enemyColor,
+      appstate.movesList[appstate.movesList.length - 1],
+      appstate.castlingRights
+    );
 
     if (legalMoves.length === 0) {
       if (inCheck) dispatch(setCheckmate(enemyColor));
@@ -117,6 +123,7 @@ const Pieces = ({ reversed }) => {
   const handleSquareClick = useCallback((rowIndex, colIndex, piece) => {
     const allMoves = getAllLegalMoves(position, appstate.turn, lastMove, appstate.castlingRights);
     const filtered = allMoves.filter(m => m.from.row === rowIndex && m.from.col === colIndex);
+
     if (selectedSquare) {
       if (selectedSquare.row === rowIndex && selectedSquare.col === colIndex) {
         dispatch(setCandidateMoves([]));
@@ -134,6 +141,10 @@ const Pieces = ({ reversed }) => {
   }, [selectedSquare, appstate, dispatch, position, handleMove, lastMove]);
 
   const displayBoard = reversed ? [...position].reverse().map(row => [...row].reverse()) : position;
+
+  // Stub handlers (replace with actual logic)
+  const resetGame = () => window.location.reload(); // or implement proper reset
+  const replayGame = () => alert("Replay not implemented yet");
 
   return (
     <>
@@ -202,16 +213,13 @@ const Pieces = ({ reversed }) => {
 
       {appstate.promotion && <PromoteModal />}
 
-      {appstate.isCheckmate && (
-        <div className="absolute inset-0 bg-black/80 text-white text-3xl flex items-center justify-center z-50">
-          Checkmate! {appstate.isCheckmate === 'w' ? 'White' : 'Black'} loses!
-        </div>
-      )}
-
-      {appstate.isStalemate && (
-        <div className="absolute inset-0 bg-black/80 text-white text-3xl flex items-center justify-center z-50">
-          Stalemate!
-        </div>
+      {(appstate.isCheckmate || appstate.isStalemate) && (
+        <GameOverModal
+          type={appstate.isCheckmate ? 'checkmate' : 'stalemate'}
+          loser={appstate.isCheckmate}
+          onNewGame={resetGame}
+          onReplay={replayGame}
+        />
       )}
     </>
   );
