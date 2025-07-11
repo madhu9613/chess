@@ -7,7 +7,7 @@ const PlayerCard = ({ name, rating, color, isActive, timeLeft, isOpponent = fals
       isActive 
         ? 'border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.3)]' 
         : 'border-white/10'
-    } transition-all`}>
+    } transition-all w-fit `}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${
