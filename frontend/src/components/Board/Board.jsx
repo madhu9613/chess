@@ -24,7 +24,7 @@ const Board = () => {
   }, [movesList]);
 
   return (
-    <div className="flex flex-col lg:flex-row items-center justify-center gap-8 p-4 min-h-screen  bg-black/90 backdrop-blur-sm">
+    <div className="flex flex-col lg:flex-row items-center justify-center gap-8  w-fit rounded-lg bg-black/90 backdrop-blur-sm">
       {/* Color Switch Dropdown */}
       <div className="absolute top-4 right-4 bg-white/80 backdrop-blur-md border border-gray-300 rounded-lg shadow-lg px-4 py-2">
         <label className="mr-2 font-semibold text-stone-700">Play as:</label>
