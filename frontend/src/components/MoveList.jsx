@@ -25,6 +25,25 @@ const MoveList = () => {
   const lastMoveIndex = movesList.length > 0 ? movesList.length - 1 : -1;
 
   useEffect(() => {
+    // Inject CSS to hide scrollbars globally
+    const style = document.createElement('style');
+    style.innerHTML = `
+      .scrollbar-hidden {
+        -ms-overflow-style: none;  /* IE and Edge */
+        scrollbar-width: none;  /* Firefox */
+      }
+      .scrollbar-hidden::-webkit-scrollbar {
+        display: none;  /* Chrome, Safari, Opera */
+      }
+    `;
+    document.head.appendChild(style);
+
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
+  useEffect(() => {
     if (moveContainerRef.current) {
       if (reversed) {
         moveContainerRef.current.scrollTop = 0;
@@ -87,8 +106,9 @@ const MoveList = () => {
           </div>
         </div>
 
+        {/* Updated container with scrollbar-hidden class */}
         <div
-          className="max-h-[420px] min-h-[420px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-amber-700 scrollbar-track-stone-700 rounded-lg"
+          className="max-h-[420px] min-h-[420px] overflow-y-auto pr-2 scrollbar-hidden rounded-lg"
           ref={moveContainerRef}
         >
           {movePairs.length > 0 ? (
