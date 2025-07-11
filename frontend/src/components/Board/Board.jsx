@@ -87,7 +87,7 @@ const Board = () => {
       </div>
 
       {/* Move History Panel */}
-      <MoveList ref={moveContainerRef} />
+      {/* <MoveList ref={moveContainerRef} /> */}
     </div>
   );
 };
