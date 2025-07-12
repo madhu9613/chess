@@ -10,7 +10,7 @@ import {
 import PromoteModal from '../PromoteModal';
 import { pieceImages, getSAN, isSquareAttacked } from '../../utils';
 import { getAllLegalMoves } from '../../arbiter/getAlllegalMoves';
-import GameOverModal from '../../GameOverModal.jsx'; // ✅ Ensure this is correctly imported
+import GameOverModal from '../GameOverModal.jsx'; // ✅ Ensure this is correctly imported
 import actionTypes from '../../reducer/actionTypes.js';
 
 
@@ -41,6 +41,28 @@ const Pieces = ({ reversed }) => {
 
     const move = validMoves.find(m => m.row === toRow && m.col === toCol);
     if (!move) return;
+    if (move.enPassant) {
+      const newPosition = position.map(row => [...row]);
+      newPosition[fromRow][fromCol] = '';
+      newPosition[toRow][toCol] = piece;
+
+      const capturedRow = piece[0] === 'w' ? toRow + 1 : toRow - 1;
+      newPosition[capturedRow][toCol] = ''; // Remove captured pawn
+
+      const newMove = {
+        from: { row: fromRow, col: fromCol },
+        to: { row: toRow, col: toCol },
+        piece,
+        captured: true,
+        san: getSAN(piece, fromRow, fromCol, toRow, toCol, true),
+        enPassant: true
+      };
+
+      dispatch(makeNewMove({ newPosition, newMove }));
+      dispatch(setCandidateMoves([]));
+      setSelectedSquare(null);
+      return;
+    }
 
     if (move.castle) {
       dispatch({ type: 'CASTLING_MOVE', payload: { castle: move.castle, color: appstate.turn } });
@@ -251,7 +273,7 @@ const Pieces = ({ reversed }) => {
           loser={appstate.isCheckmate}
           onNewGame={resetGame}
           onReplay={replayGame}
-          onCancel={() => setHideModal(true)} 
+          onCancel={() => setHideModal(true)}
         />
       )}
 
