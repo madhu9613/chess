@@ -185,6 +185,13 @@ case actionTypes.SET_INITIAL_STATE: {
   };
 }
 
+case 'SET_MOVES_LIST':
+  return {
+    ...state,
+    movesList: action.payload
+  };
+
+
 
 
 
