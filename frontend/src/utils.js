@@ -46,15 +46,27 @@ export const isSquareAttacked = (square, board, byColor, lastMove, castlingRight
   for (let row = 0; row < 8; row++) {
     for (let col = 0; col < 8; col++) {
       const piece = board[row][col];
-      if (piece && piece[0] === byColor) {
-        if (piece[1] === 'k') continue; // Skip enemy king
-
-        const moves = getValidMoves({ row, col }, board, byColor, lastMove, castlingRights);
-
-        if (moves.some(m => m.row === square.row && m.col === square.col)) {
-          return true;
-        }
+     if (piece && piece[0] === byColor) {
+  if (piece[1] === 'k') {
+    // Manually check king's adjacent squares
+    const deltas = [-1, 0, 1];
+    for (let dr of deltas) {
+      for (let dc of deltas) {
+        if (dr === 0 && dc === 0) continue;
+        const r = row + dr;
+        const c = col + dc;
+        if (r === square.row && c === square.col) return true;
       }
+    }
+    continue;
+  }
+
+  const moves = getValidMoves({ row, col }, board, byColor, lastMove, castlingRights);
+  if (moves.some(m => m.row === square.row && m.col === square.col)) {
+    return true;
+  }
+}
+
     }
   }
   return false;
