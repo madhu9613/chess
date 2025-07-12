@@ -1,4 +1,3 @@
-// src/reducer/actionTypes.js
 const actionTypes = {
   NEW_MOVE: 'NEW_MOVE',
   SET_CANDIDATE_MOVES: 'SET_CANDIDATE_MOVES',
@@ -8,9 +7,12 @@ const actionTypes = {
   SET_CHECK_STATUS: 'SET_CHECK_STATUS',
   CHECKMATE: 'CHECKMATE',
   STALEMATE: 'STALEMATE',
-  RESET_FOR_REPLAY: 'RESET_FOR_REPLAY'
+  RESET_FOR_REPLAY: 'RESET_FOR_REPLAY',
 
-  // Add more types if needed
-}
+  // ✅ NEW ACTIONS for multiplayer state
+  SET_PLAYER_COLOR: 'SET_PLAYER_COLOR',
+  SET_OPPONENT_JOINED: 'SET_OPPONENT_JOINED',
+   SET_INITIAL_STATE: 'SET_INITIAL_STATE'
+};
 
-export default actionTypes
+export default actionTypes;

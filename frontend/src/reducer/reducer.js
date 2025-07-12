@@ -1,4 +1,5 @@
 // src/reducer/reducer.js
+import { getInitialBoardPosition } from "../utils";
 import actionTypes from "./actionTypes"
 
 export const reducer = (state, action) => {
@@ -157,7 +158,32 @@ export const reducer = (state, action) => {
         gameHistory: action.payload.gameHistory,
       };
 
+      case actionTypes.SET_PLAYER_COLOR:
+  return {
+    ...state,
+    playerColor: action.payload, // 'w' or 'b'
+  };
 
+case actionTypes.SET_OPPONENT_JOINED:
+  return {
+    ...state,
+    opponentJoined: action.payload, // true/false
+  };
+
+
+case actionTypes.SET_INITIAL_STATE: {
+  const isValidPayload = Array.isArray(action.payload) && 
+                         action.payload.length === 8 &&
+                         Array.isArray(action.payload[0]);
+
+  return {
+    ...state,
+    position: [isValidPayload ? action.payload : getInitialBoardPosition()],
+    movesList: [],
+    turn: 'w',
+    gameHistory: []
+  };
+}
 
 
 
