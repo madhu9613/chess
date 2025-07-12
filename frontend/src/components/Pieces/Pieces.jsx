@@ -178,7 +178,9 @@ const Pieces = ({ reversed, roomId }) => {
       appstate.castlingRights
     );
 
-    dispatch(setCheckStatus({ ...appstate.isCheck, [enemyColor]: inCheck }));
+   if (appstate.isCheck?.[enemyColor] !== inCheck) {
+  dispatch(setCheckStatus({ ...appstate.isCheck, [enemyColor]: inCheck }));
+}
 
     const legalMoves = getAllLegalMoves(
       board,
@@ -193,20 +195,33 @@ const Pieces = ({ reversed, roomId }) => {
     }
   }, [position, appstate]);
 
-  useEffect(() => {
-  if (!appstate.promotion && appstate.movesList.length > 0) {
+ useEffect(() => {
+  if (
+    appstate.movesList.length > 0 &&
+    !appstate.promotion
+  ) {
     const lastMove = appstate.movesList[appstate.movesList.length - 1];
     const lastPosition = appstate.position[appstate.position.length - 1];
 
-    if (lastMove.promotion && lastMove.promotedTo) {
+    if (lastMove.promotion && lastMove.promotedTo && !lastMove.sentToServer) {
+      // ✅ Mark as sent so we don't emit again
       socket.emit('makeMove', {
         roomId,
-        move: lastMove,
+        move: { ...lastMove, sentToServer: true }, // mark in copy
         position: lastPosition
       });
+
+      // ✅ Replace lastMove with sentToServer = true
+      const updatedMovesList = [...appstate.movesList];
+      updatedMovesList[updatedMovesList.length - 1] = {
+        ...lastMove,
+        sentToServer: true
+      };
+      dispatch({ type: 'SET_MOVES_LIST', payload: updatedMovesList });
     }
   }
-}, [appstate.promotion]);
+}, [appstate.promotion, appstate.movesList, appstate.position, roomId, dispatch]);
+
 
 
   const handleDrop = useCallback((e, toRow, toCol) => {
