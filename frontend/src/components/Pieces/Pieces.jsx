@@ -8,22 +8,70 @@ import {
   setStalemate
 } from '../../reducer/actions/move';
 import PromoteModal from '../PromoteModal';
+import GameOverModal from '../GameOverModal.jsx';
 import { pieceImages, getSAN, isSquareAttacked } from '../../utils';
 import { getAllLegalMoves } from '../../arbiter/getAlllegalMoves';
-import GameOverModal from '../GameOverModal.jsx'; // ✅ Ensure this is correctly imported
 import actionTypes from '../../reducer/actionTypes.js';
+import socket from '../../socket/socket';
 
-
-
-const Pieces = ({ reversed }) => {
+const Pieces = ({ reversed, roomId }) => {
   const { appstate, dispatch } = useContext(AppContext);
-  const position = appstate.position[appstate.position.length - 1];
+
+  const getEmptyBoard = useCallback(() => 
+    Array(8).fill().map(() => Array(8).fill('')), 
+  []);
+  // ✅ Safely get the latest board position
+ const position = useMemo(() => {
+    if (!Array.isArray(appstate.position) || appstate.position.length === 0) {
+      return getEmptyBoard();
+    }
+    const last = appstate.position[appstate.position.length - 1];
+    // Validate board structure
+    if (!Array.isArray(last) || last.length !== 8 || !Array.isArray(last[0])) {
+      return getEmptyBoard();
+    }
+    return last;
+  }, [appstate.position, getEmptyBoard]);
+
+
   const validMoves = appstate.candidateMoves;
   const [draggingPiece, setDraggingPiece] = useState(null);
   const [hoveredSquare, setHoveredSquare] = useState(null);
   const [selectedSquare, setSelectedSquare] = useState(null);
-  const lastMove = useMemo(() => appstate.movesList[appstate.movesList.length - 1], [appstate.movesList]);
   const [hideModal, setHideModal] = useState(false);
+  const playerColor = appstate.playerColor;
+
+  const lastMove = useMemo(
+    () => appstate.movesList[appstate.movesList.length - 1],
+    [appstate.movesList]
+  );
+
+  useEffect(() => {
+    socket.on('opponent-move', ({ newPosition, newMove }) => {
+      dispatch(makeNewMove({ newPosition, newMove }));
+      dispatch(setCandidateMoves([]));
+      setSelectedSquare(null);
+    });
+
+    return () => socket.off('opponent-move');
+  }, [dispatch]);
+
+  useEffect(() => {
+    socket.on('opponent-disconnected', () => {
+      alert('Opponent disconnected! Game ended.');
+      window.location.reload();
+    });
+
+    return () => socket.off('opponent-disconnected');
+  }, []);
+
+  useEffect(() => {
+    socket.on('initial-state', (boardState) => {
+      dispatch({ type: 'SET_INITIAL_STATE', payload: boardState });
+    });
+
+    return () => socket.off('initial-state');
+  }, [dispatch]);
 
   const [candidateNormalMoves, candidateCaptureMoves] = useMemo(() => {
     const normal = Array(8).fill().map(() => Array(8).fill(false));
@@ -37,17 +85,17 @@ const Pieces = ({ reversed }) => {
 
   const handleMove = useCallback((fromRow, fromCol, toRow, toCol) => {
     const piece = position[fromRow][fromCol];
-    if (!piece || piece[0] !== appstate.turn) return;
+    if (!piece || piece[0] !== appstate.turn || piece[0] !== playerColor) return;
 
     const move = validMoves.find(m => m.row === toRow && m.col === toCol);
     if (!move) return;
+
     if (move.enPassant) {
       const newPosition = position.map(row => [...row]);
       newPosition[fromRow][fromCol] = '';
       newPosition[toRow][toCol] = piece;
-
       const capturedRow = piece[0] === 'w' ? toRow + 1 : toRow - 1;
-      newPosition[capturedRow][toCol] = ''; // Remove captured pawn
+      newPosition[capturedRow][toCol] = '';
 
       const newMove = {
         from: { row: fromRow, col: fromCol },
@@ -60,21 +108,29 @@ const Pieces = ({ reversed }) => {
 
       dispatch(makeNewMove({ newPosition, newMove }));
       dispatch(setCandidateMoves([]));
+      socket.emit('makeMove', { roomId, move: newMove, position: newPosition });
+
       setSelectedSquare(null);
       return;
     }
 
     if (move.castle) {
-      dispatch({ type: 'CASTLING_MOVE', payload: { castle: move.castle, color: appstate.turn } });
+      dispatch({ type: actionTypes.CASTLING_MOVE, payload: { castle: move.castle, color: appstate.turn } });
       dispatch(setCandidateMoves([]));
+      socket.emit('send-move', { newMove: { castle: move.castle }, castling: true });
       setSelectedSquare(null);
       return;
     }
 
     if (move.promotion) {
       dispatch({
-        type: 'SET_PROMOTION',
-        payload: { from: { row: fromRow, col: fromCol }, to: { row: toRow, col: toCol }, piece, captured: move.capture || false }
+        type: actionTypes.SET_PROMOTION,
+        payload: {
+          from: { row: fromRow, col: fromCol },
+          to: { row: toRow, col: toCol },
+          piece,
+          captured: move.capture || false
+        }
       });
       return;
     }
@@ -93,12 +149,12 @@ const Pieces = ({ reversed }) => {
 
     dispatch(makeNewMove({ newPosition, newMove }));
     dispatch(setCandidateMoves([]));
+    socket.emit('makeMove', { roomId, move: newMove, position: newPosition });
     setSelectedSquare(null);
-  }, [position, appstate, validMoves, dispatch]);
+  }, [position, appstate, validMoves, dispatch, playerColor, roomId]);
 
-  // Check checkmate/stalemate on every board update
   useEffect(() => {
-    const board = appstate.position[appstate.position.length - 1];
+    const board = position;
     const enemyColor = appstate.turn;
     let kingPos = null;
 
@@ -135,7 +191,23 @@ const Pieces = ({ reversed }) => {
       if (inCheck) dispatch(setCheckmate(enemyColor));
       else dispatch(setStalemate());
     }
-  }, [appstate.position]);
+  }, [position, appstate]);
+
+  useEffect(() => {
+  if (!appstate.promotion && appstate.movesList.length > 0) {
+    const lastMove = appstate.movesList[appstate.movesList.length - 1];
+    const lastPosition = appstate.position[appstate.position.length - 1];
+
+    if (lastMove.promotion && lastMove.promotedTo) {
+      socket.emit('makeMove', {
+        roomId,
+        move: lastMove,
+        position: lastPosition
+      });
+    }
+  }
+}, [appstate.promotion]);
+
 
   const handleDrop = useCallback((e, toRow, toCol) => {
     e.preventDefault();
@@ -146,6 +218,8 @@ const Pieces = ({ reversed }) => {
   }, [handleMove]);
 
   const handleSquareClick = useCallback((rowIndex, colIndex, piece) => {
+    if (!playerColor || appstate.turn !== playerColor) return;
+
     const allMoves = getAllLegalMoves(position, appstate.turn, lastMove, appstate.castlingRights);
     const filtered = allMoves.filter(m => m.from.row === rowIndex && m.from.col === colIndex);
 
@@ -163,29 +237,30 @@ const Pieces = ({ reversed }) => {
       dispatch(setCandidateMoves([]));
       setSelectedSquare(null);
     }
-  }, [selectedSquare, appstate, dispatch, position, handleMove, lastMove]);
+  }, [selectedSquare, appstate, dispatch, position, handleMove, lastMove, playerColor]);
 
-  const displayBoard = reversed ? [...position].reverse().map(row => [...row].reverse()) : position;
+  const displayBoard = useMemo(() => {
+    if (!Array.isArray(position) || position.length === 0) {
+      return getEmptyBoard();
+    }
+    return reversed
+      ? [...position].reverse().map(row => [...row].reverse())
+      : position;
+  }, [position, reversed, getEmptyBoard]);
 
   const resetGame = () => window.location.reload();
 
   const replayGame = () => {
     if (!appstate.gameHistory.length) return;
-
-    // 🧹 Clean up game over flags
     dispatch(setCheckmate(null));
-    dispatch(setStalemate(false)); // FIX: Use false instead of null
+    dispatch(setStalemate(false));
 
-    // 🔁 Reset board to beginning
     dispatch({
       type: actionTypes.RESET_FOR_REPLAY,
-      payload: {
-        gameHistory: appstate.gameHistory
-      }
+      payload: { gameHistory: appstate.gameHistory }
     });
 
     let index = 0;
-
     const interval = setInterval(() => {
       if (index >= appstate.gameHistory.length) {
         clearInterval(interval);
@@ -195,10 +270,8 @@ const Pieces = ({ reversed }) => {
       const { position, move } = appstate.gameHistory[index];
       dispatch(makeNewMove({ newPosition: position, newMove: move }));
       index++;
-    }, 600); // You can adjust the speed here
+    }, 600);
   };
-
-
 
   return (
     <>
@@ -266,8 +339,7 @@ const Pieces = ({ reversed }) => {
       </div>
 
       {appstate.promotion && <PromoteModal />}
-
-      {(appstate.isCheckmate || appstate.isStalemate) && (
+      {(appstate.isCheckmate || appstate.isStalemate) && !hideModal && (
         <GameOverModal
           type={appstate.isCheckmate ? 'checkmate' : 'stalemate'}
           loser={appstate.isCheckmate}
@@ -276,7 +348,6 @@ const Pieces = ({ reversed }) => {
           onCancel={() => setHideModal(true)}
         />
       )}
-
     </>
   );
 };
