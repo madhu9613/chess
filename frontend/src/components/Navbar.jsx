@@ -5,7 +5,7 @@ const Navbar = () => {
   const [isMyTurn, setIsMyTurn] = useState(true);
   return (
      <div className="w-full h-14 bg-[#1a1a1a] border-b border-gray-800 px-6 flex items-center justify-between">
-          <h1 className="text-lg font-bold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">Chess Royale</h1>
+          <h1 className="text-lg font-bold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">CheckMate</h1>
        <div className='flex justify-center items-center gap-3'>
        <span className="text-sm text-emerald-400">
             {gameStatus === 'playing' ? (isMyTurn ? 'Your Turn' : "Opponent's Turn") : gameStatus.toUpperCase()}
