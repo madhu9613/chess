@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { NavLink,Link, useLocation } from 'react-router-dom';
 import { Tooltip } from 'react-tooltip';
 
 const Sidebar = () => {
@@ -21,7 +21,7 @@ const Sidebar = () => {
       {/* Navigation Icons */}
       <div className="flex flex-col gap-6 text-gray-400 text-2xl">
         {navItems.map((item, idx) => (
-          <Link
+          <NavLink
             key={idx}
             to={item.path}
             data-tooltip-id={`tip-${idx}`}
@@ -32,7 +32,7 @@ const Sidebar = () => {
           >
             <span>{item.icon}</span>
             <Tooltip id={`tip-${idx}`} place="right" effect="solid" />
-          </Link>
+          </NavLink>
         ))}
       </div>
     </div>
