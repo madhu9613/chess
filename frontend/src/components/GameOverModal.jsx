@@ -26,14 +26,23 @@ const NewGameIcon = ({ className }) => (
 );
 
 // Main Modal Component
-const GameOverModal = ({ type, loser, onNewGame, onReplay }) => {
+const GameOverModal = ({ type, loser, onNewGame, onReplay, onClose }) => {
   const winner = loser === 'w' ? 'Black' : 'White';
   const isCheckmate = type === 'checkmate';
 
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-gradient-to-br from-gray-900 to-black border-2 border-amber-400 rounded-2xl max-w-md w-full p-8 text-center animate-fade-in">
+      <div className="relative bg-gradient-to-br from-gray-900 to-black border-2 border-amber-400 rounded-2xl max-w-md w-full p-8 text-center animate-fade-in">
         
+        {/* Close Button (X) */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-white text-2xl hover:text-red-500 transition"
+          aria-label="Close modal"
+        >
+          &times;
+        </button>
+
         <div className="mb-6 flex justify-center">
           <div className="bg-amber-500 w-24 h-24 rounded-full flex items-center justify-center shadow-lg">
             {isCheckmate ? (
@@ -73,5 +82,6 @@ const GameOverModal = ({ type, loser, onNewGame, onReplay }) => {
     </div>
   );
 };
+
 
 export default GameOverModal;
