@@ -11,7 +11,7 @@ export const reducer = (state, action) => {
       return {
         ...state,
         position: [...state.position, newPosition],
-        movesList: [...state.movesList, newMove],
+        movesList: [...state.movesList, { ...newMove, position: newPosition }],
         turn: state.turn === 'w' ? 'b' : 'w',
         gameHistory: newHistory
       }
@@ -46,7 +46,8 @@ export const reducer = (state, action) => {
             to: { row, col: castle === 'kingSide' ? 6 : 2 },
             piece: `${color}k`,
             san,
-            castle
+            castle,
+            position: newPosition  // Add position
           }
         ],
         castlingRights: {
@@ -118,7 +119,7 @@ export const reducer = (state, action) => {
       return {
         ...state,
         position: [...state.position, newPosition],
-        movesList: [...state.movesList, move],
+        movesList: [...state.movesList, { ...move, position: newPosition }],
         turn: state.turn === 'w' ? 'b' : 'w',
         promotion: null,
         gameHistory: newHistory
@@ -158,40 +159,75 @@ export const reducer = (state, action) => {
         gameHistory: action.payload.gameHistory,
       };
 
-      case actionTypes.SET_PLAYER_COLOR:
+    case actionTypes.SET_PLAYER_COLOR:
+      return {
+        ...state,
+        playerColor: action.payload, // 'w' or 'b'
+      };
+
+    case actionTypes.SET_OPPONENT_JOINED:
+      return {
+        ...state,
+        opponentJoined: action.payload, // true/false
+      };
+
+
+    case actionTypes.SET_INITIAL_STATE: {
+      const isValidPayload = Array.isArray(action.payload) &&
+        action.payload.length === 8 &&
+        Array.isArray(action.payload[0]);
+
+      return {
+        ...state,
+        position: [isValidPayload ? action.payload : getInitialBoardPosition()],
+        movesList: [],
+        turn: 'w',
+        gameHistory: []
+      };
+    }
+
+    case 'SET_MOVES_LIST':
+      return {
+        ...state,
+        movesList: action.payload
+      };
+
+
+   case 'JUMP_TO_MOVE': {
+  const moveIndex = action.payload.index;
+  
+  // Reconstruct position history up to the clicked move
+  const newPositions = [state.position[0]];  // Start with initial position
+  for (let i = 0; i <= moveIndex; i++) {
+    if (state.movesList[i]?.position) {
+      newPositions.push(state.movesList[i].position);
+    }
+  }
+
   return {
     ...state,
-    playerColor: action.payload, // 'w' or 'b'
-  };
-
-case actionTypes.SET_OPPONENT_JOINED:
-  return {
-    ...state,
-    opponentJoined: action.payload, // true/false
-  };
-
-
-case actionTypes.SET_INITIAL_STATE: {
-  const isValidPayload = Array.isArray(action.payload) && 
-                         action.payload.length === 8 &&
-                         Array.isArray(action.payload[0]);
-
-  return {
-    ...state,
-    position: [isValidPayload ? action.payload : getInitialBoardPosition()],
-    movesList: [],
-    turn: 'w',
-    gameHistory: []
+    position: newPositions,
+    currentMoveIndex: moveIndex,
+    turn: (moveIndex % 2 === 0) ? 'b' : 'w',
+    isCheck: {},
+    isCheckmate: null,
+    isStalemate: false
   };
 }
 
-case 'SET_MOVES_LIST':
+case 'RESET_GAME': {
   return {
     ...state,
-    movesList: action.payload
+    position: [getInitialBoardPosition()],  // from utils
+    movesList: [],
+    currentMoveIndex: 0,
+    turn: 'w',
+    isCheck: {},
+    isCheckmate: null,
+    isStalemate: false,
+    // Reset any other game-related state here
   };
-
-
+}
 
 
 

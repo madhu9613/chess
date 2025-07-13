@@ -14,8 +14,8 @@ export const initialState = {
   isCheck: { w: false, b: false },
   gameHistory: [],
 
-  // ✅ Multiplayer Info
-  playerColor: null,           // 'w' or 'b'
-  opponentJoined: false,       // true or false
+  playerColor: null,          
+  opponentJoined: false,
+  currentMoveIndex: -1,
 };
 
