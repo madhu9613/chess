@@ -35,19 +35,19 @@ const MultiplayerGame = () => {
       dispatch({ type: 'SET_PLAYER_COLOR', payload: color });
     });
 
-   socket.on("opponent-move", ({ newPosition, newMove }) => {
-  const isValidPosition = Array.isArray(newPosition) && 
-                         newPosition.length === 8 &&
-                         Array.isArray(newPosition[0]);
-  
-  if (!isValidPosition) {
-    console.error("Invalid position received from opponent:", newPosition);
-    return;
-  }
-  
-  dispatch(makeNewMove({ newPosition, newMove }));
-  dispatch(setCandidateMoves([]));
-});
+    socket.on("opponent-move", ({ newPosition, newMove }) => {
+      const isValidPosition = Array.isArray(newPosition) &&
+        newPosition.length === 8 &&
+        Array.isArray(newPosition[0]);
+
+      if (!isValidPosition) {
+        console.error("Invalid position received from opponent:", newPosition);
+        return;
+      }
+
+      dispatch(makeNewMove({ newPosition, newMove }));
+      dispatch(setCandidateMoves([]));
+    });
 
 
     socket.on("opponent-disconnected", () => {
@@ -62,6 +62,11 @@ const MultiplayerGame = () => {
       socket.off("opponent-disconnected");
     };
   }, [dispatch]);
+
+  useEffect(() => {
+  dispatch({ type: 'RESET_GAME' }); // Clear previous board
+}, []); // on mount
+
 
   if (gameStatus === 'opponent-disconnected') {
     return (
@@ -144,8 +149,17 @@ const MultiplayerGame = () => {
 
           <div className={`flex flex-col gap-4 md:gap-6 ${showSidePanel ? 'block' : 'hidden md:block'}`}>
             <div className="bg-stone-800/50 backdrop-blur-sm rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.5)] p-4 border border-white/10">
-              <h3 className="text-lg font-bold text-amber-300 mb-3">Move History</h3>
-              <MoveList />
+
+              <MoveList
+                isMultiplayer={true}
+                onJumpToMove={(index) => {
+                  dispatch({
+                    type: 'JUMP_TO_MOVE',
+                    payload: { index }
+                  });
+                }}
+              />
+
             </div>
             <GameChat />
           </div>

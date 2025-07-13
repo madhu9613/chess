@@ -1,7 +1,15 @@
 import MoveList from '../components/MoveList';
 import BoardLocal from '../components/Board/BoardLocal.jsx';
+import { useContext } from 'react';
+import { useEffect } from 'react';
+import { AppContext } from '../context/AppContext.jsx';
 
 const LocalPlay = () => {
+  const {appstate,dispatch} =useContext(AppContext)
+  useEffect(() => {
+  dispatch({ type: 'RESET_GAME' }); // Clear previous board
+}, []); // on mount
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-stone-100 p-3 md:p-6">
@@ -22,8 +30,16 @@ const LocalPlay = () => {
         
         
           <div className="bg-stone-800/50 backdrop-blur-sm rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.5)] p-4 border border-white/10">
-            <h3 className="text-lg font-bold text-amber-300 mb-3">Move History</h3>
-            <MoveList />
+              <MoveList
+                isMultiplayer={false}
+                onJumpToMove={(index) => {
+                  dispatch({
+                    type: 'JUMP_TO_MOVE',
+                    payload: { index }
+                  });
+                }}
+              />
+
           </div>
           
         
