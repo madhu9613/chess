@@ -182,7 +182,7 @@ const PiecesLocal = ({ reversed }) => {
   const replayGame = () => {
     if (!appstate.gameHistory.length) return;
 
-    // 🧹 Clean up game over flags
+
     dispatch(setCheckmate(null));
     dispatch(setStalemate(false)); // FIX: Use false instead of null
 
@@ -205,7 +205,7 @@ const PiecesLocal = ({ reversed }) => {
       const { position, move } = appstate.gameHistory[index];
       dispatch(makeNewMove({ newPosition: position, newMove: move }));
       index++;
-    }, 600); // You can adjust the speed here
+    }, 3000); 
   };
 
 

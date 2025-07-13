@@ -361,6 +361,7 @@ const Pieces = ({ reversed, roomId }) => {
           onNewGame={resetGame}
           onReplay={replayGame}
           onCancel={() => setHideModal(true)}
+          onClose={()=>setHideModal(true)}
         />
       )}
     </>
