@@ -1,7 +1,10 @@
+// src/core/executeMove.js
+
+import { copyBoard } from '../utils/boardUtils.js';
 
 export const executeMove = (board, move, piece, castlingRights) => {
-    // Create deep copy of board
-    const newBoard = board.map(row => [...row]);
+    // Create deep copies
+    const newBoard = copyBoard(board);
     const newCastlingRights = {
         w: { ...castlingRights.w },
         b: { ...castlingRights.b }
@@ -15,48 +18,14 @@ export const executeMove = (board, move, piece, castlingRights) => {
     const toRow = move.to.row;
     const toCol = move.to.col;
 
+    // Handle castling
     if (move.castle) {
-        const row = piece[0] === 'w' ? 7 : 0;
-
-       
-        newBoard[toRow][toCol] = piece;
-        newBoard[fromRow][fromCol] = '';
-
-        if (move.castle === 'kingSide') {
-            // King-side: rook from h-file (col 7) to f-file (col 5)
-            const rookPiece = newBoard[row][7];
-            newBoard[row][5] = rookPiece;
-            newBoard[row][7] = '';
-        } else if (move.castle === 'queenSide') {
-            // Queen-side: rook from a-file (col 0) to d-file (col 3)
-            const rookPiece = newBoard[row][0];
-            newBoard[row][3] = rookPiece;
-            newBoard[row][0] = '';
-        }
-
-        // Update castling rights (king and rook moved)
-        if (piece[0] === 'w') {
-            newCastlingRights.w.kingSide = false;
-            newCastlingRights.w.queenSide = false;
-        } else {
-            newCastlingRights.b.kingSide = false;
-            newCastlingRights.b.queenSide = false;
-        }
-
-        return { newBoard, newCastlingRights, enPassantTarget, capturedPiece };
+        return handleCastling(newBoard, move, piece, newCastlingRights, fromCol);
     }
 
     // Handle en passant capture
     if (move.enPassant) {
-        const direction = piece[0] === 'w' ? -1 : 1;
-        const capturedRow = toRow - direction;
-
-        capturedPiece = newBoard[capturedRow][toCol];
-        newBoard[capturedRow][toCol] = ''; // Remove captured pawn
-        newBoard[toRow][toCol] = piece;
-        newBoard[fromRow][fromCol] = '';
-
-        return { newBoard, newCastlingRights, enPassantTarget, capturedPiece };
+        return handleEnPassant(newBoard, move, piece, newCastlingRights);
     }
 
     // Normal move or capture
@@ -66,8 +35,7 @@ export const executeMove = (board, move, piece, castlingRights) => {
 
     // Handle promotion
     if (move.promotion) {
-        const promotedPiece = piece[0] + move.promotion;
-        newBoard[toRow][toCol] = promotedPiece;
+        newBoard[toRow][toCol] = piece[0] + move.promotion;
     }
 
     // Set en passant target for pawn two-square moves
@@ -79,63 +47,126 @@ export const executeMove = (board, move, piece, castlingRights) => {
         };
     }
 
-    // Update castling rights if king or rook moved
-    if (piece[1] === 'k') {
-        if (piece[0] === 'w') {
-            newCastlingRights.w.kingSide = false;
-            newCastlingRights.w.queenSide = false;
-        } else {
-            newCastlingRights.b.kingSide = false;
-            newCastlingRights.b.queenSide = false;
-        }
+    // Update castling rights
+    updateCastlingRights(newCastlingRights, piece, fromRow, fromCol, capturedPiece, toRow, toCol);
+
+    // ALWAYS return consistent shape - NEVER null for castlingRights
+    return {
+        newBoard,
+        newCastlingRights,
+        enPassantTarget,
+        capturedPiece
+    };
+};
+
+const handleCastling = (board, move, piece, castlingRights, fromCol) => {
+    const row = piece[0] === 'w' ? 7 : 0;
+    const toCol = move.castle === 'kingSide' ? 6 : 2;
+    const rookFromCol = move.castle === 'kingSide' ? 7 : 0;
+    const rookToCol = move.castle === 'kingSide' ? 5 : 3;
+
+    // Move king (use actual fromCol from move, not hardcoded 4)
+    board[row][toCol] = piece;
+    board[row][fromCol] = '';
+
+    // Move rook
+    const rookPiece = board[row][rookFromCol];
+    board[row][rookToCol] = rookPiece;
+    board[row][rookFromCol] = '';
+
+    // Update castling rights
+    if (piece[0] === 'w') {
+        castlingRights.w.kingSide = false;
+        castlingRights.w.queenSide = false;
+    } else {
+        castlingRights.b.kingSide = false;
+        castlingRights.b.queenSide = false;
     }
 
-    if (piece[1] === 'r') {
-        if (piece[0] === 'w') {
-            if (fromRow === 7 && fromCol === 0) newCastlingRights.w.queenSide = false;
-            if (fromRow === 7 && fromCol === 7) newCastlingRights.w.kingSide = false;
-        } else {
-            if (fromRow === 0 && fromCol === 0) newCastlingRights.b.queenSide = false;
-            if (fromRow === 0 && fromCol === 7) newCastlingRights.b.kingSide = false;
-        }
-    }
+    // ALWAYS return consistent shape - NEVER null
+    return {
+        newBoard: board,
+        newCastlingRights: castlingRights,
+        enPassantTarget: null,
+        capturedPiece: null
+    };
+};
 
-    // If a rook is captured, remove castling rights for that side
-    if (capturedPiece && capturedPiece[1] === 'r') {
-        if (capturedPiece[0] === 'w') {
-            if (toRow === 7 && toCol === 0) newCastlingRights.w.queenSide = false;
-            if (toRow === 7 && toCol === 7) newCastlingRights.w.kingSide = false;
-        } else {
-            if (toRow === 0 && toCol === 0) newCastlingRights.b.queenSide = false;
-            if (toRow === 0 && toCol === 7) newCastlingRights.b.kingSide = false;
-        }
-    }
 
-    return { newBoard, newCastlingRights, enPassantTarget, capturedPiece };
+const handleEnPassant = (board, move, piece, castlingRights) => {
+    const direction = piece[0] === 'w' ? -1 : 1;
+    const capturedRow = move.to.row - direction;
+    const capturedPiece = board[capturedRow][move.to.col];
+
+    // Execute en passant capture
+    board[capturedRow][move.to.col] = '';
+    board[move.to.row][move.to.col] = piece;
+    board[move.from.row][move.from.col] = '';
+
+    // ALWAYS return consistent shape with preserved castlingRights
+    return {
+        newBoard: board,
+        newCastlingRights: castlingRights,  // NEVER null - preserve existing rights
+        enPassantTarget: null,
+        capturedPiece
+    };
 };
 
 /**
- * Check if move is a capture
+ * Update castling rights after move
  */
+const updateCastlingRights = (castlingRights, piece, fromRow, fromCol, capturedPiece, toRow, toCol) => {
+    // King moved
+    if (piece[1] === 'k') {
+        if (piece[0] === 'w') {
+            castlingRights.w.kingSide = false;
+            castlingRights.w.queenSide = false;
+        } else {
+            castlingRights.b.kingSide = false;
+            castlingRights.b.queenSide = false;
+        }
+        return; // King moved, no need to check rook
+    }
+
+    // Rook moved from its starting square
+    if (piece[1] === 'r') {
+        if (piece[0] === 'w') {
+            if (fromRow === 7 && fromCol === 0) castlingRights.w.queenSide = false;
+            if (fromRow === 7 && fromCol === 7) castlingRights.w.kingSide = false;
+        } else {
+            if (fromRow === 0 && fromCol === 0) castlingRights.b.queenSide = false;
+            if (fromRow === 0 && fromCol === 7) castlingRights.b.kingSide = false;
+        }
+    }
+
+    // Rook captured on its starting square
+    if (capturedPiece && capturedPiece[1] === 'r') {
+        if (capturedPiece[0] === 'w') {
+            // White rook captured on back rank
+            if (toRow === 7 && toCol === 0) castlingRights.w.queenSide = false;
+            if (toRow === 7 && toCol === 7) castlingRights.w.kingSide = false;
+        } else {
+            // Black rook captured on back rank
+            if (toRow === 0 && toCol === 0) castlingRights.b.queenSide = false;
+            if (toRow === 0 && toCol === 7) castlingRights.b.kingSide = false;
+        }
+    }
+};
+
+
 export const isCaptureMove = (board, from, to) => {
     return board[to.row][to.col] !== '';
 };
 
-/**
- * Check if move is a pawn promotion
- */
 export const isPromotionMove = (piece, toRow) => {
     if (piece[1] !== 'p') return false;
     return (piece[0] === 'w' && toRow === 0) || (piece[0] === 'b' && toRow === 7);
 };
 
-/**
- * Get move description in SAN (Standard Algebraic Notation)
- */
+
 export const getMoveSAN = (board, move, piece, capturedPiece, isCheck, isCheckmate) => {
     const pieceType = piece[1].toUpperCase();
     const fromFile = String.fromCharCode(97 + move.from.col);
-    const fromRank = 8 - move.from.row;
     const toFile = String.fromCharCode(97 + move.to.col);
     const toRank = 8 - move.to.row;
 
@@ -143,8 +174,7 @@ export const getMoveSAN = (board, move, piece, capturedPiece, isCheck, isCheckma
 
     // Handle castling
     if (move.castle) {
-        san = move.castle === 'kingSide' ? 'O-O' : 'O-O-O';
-        return san;
+        return move.castle === 'kingSide' ? 'O-O' : 'O-O-O';
     }
 
     // Add piece letter (except pawn)
@@ -155,7 +185,7 @@ export const getMoveSAN = (board, move, piece, capturedPiece, isCheck, isCheckma
     // Add capture symbol
     if (capturedPiece) {
         if (pieceType === 'P') {
-            san += fromFile; // Pawn captures include file
+            san += fromFile;
         }
         san += 'x';
     }
@@ -176,4 +206,15 @@ export const getMoveSAN = (board, move, piece, capturedPiece, isCheck, isCheckma
     }
 
     return san;
+};
+
+
+export const getMoveMetadata = (board, move, piece, turn, getAllLegalMovesFn) => {
+    // This would require the game state to determine
+    // Implement this separately in ChessGame class
+    return {
+        isCheck: false,
+        isCheckmate: false,
+        isStalemate: false
+    };
 };
