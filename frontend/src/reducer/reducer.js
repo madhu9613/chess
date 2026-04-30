@@ -133,6 +133,7 @@ export const reducer = (state, action) => {
         isCheck: action.payload
       };
     }
+    
     case actionTypes.CHECKMATE:
       return {
         ...state,

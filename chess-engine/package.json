@@ -23,11 +23,11 @@
     "fen",
     "san"
   ],
-  "author": "mady9613",
+  "author": "Madhujya Rajkhowa",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mady9613/chess-engine"
+    "url": "https://github.com/madhu9613/chess-engine"
   },
   "scripts": {
     "test": "node test.js"
