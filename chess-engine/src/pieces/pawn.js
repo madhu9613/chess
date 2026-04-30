@@ -1,3 +1,5 @@
+// src/pieces/pawn.js
+
 export const getPawnMoves = (from, board, turn, lastMove = null) => {
   const moves = [];
   const direction = turn === 'w' ? -1 : 1;
@@ -38,18 +40,17 @@ export const getPawnMoves = (from, board, turn, lastMove = null) => {
     }
   }
 
-  // En passant
-  if (from.row === enPassantRow && lastMove) {
+  // En passant - FIXED
+  if (from.row === enPassantRow && lastMove && lastMove.piece) {
     const { from: lastFrom, to: lastTo, piece: lastPiece } = lastMove;
 
-   if (
-  lastPiece &&
-  lastPiece[1] === 'p' &&
-  Math.abs(lastFrom.row - lastTo.row) === 2 &&
-  Math.abs(lastTo.col - from.col) === 1 &&
-  lastTo.row === from.row
-)
- {
+    // Check if last move was a pawn moving two squares
+    if (lastPiece &&
+      lastPiece[1] === 'p' &&
+      Math.abs(lastFrom.row - lastTo.row) === 2 &&
+      lastTo.row === from.row &&
+      Math.abs(lastTo.col - from.col) === 1) {
+
       moves.push({
         row: from.row + direction,
         col: lastTo.col,
