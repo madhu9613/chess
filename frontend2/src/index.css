@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-lighttile: #f0d9b5;
+    --color-blacktile: #b58863;
+    --color-accent: #e94560;
+    --color-dark: #1a1a2e;
+    --color-darker: #0f0f1a;
+    --color-light: #f5f5f5;
+  }
+}
+
+@layer components {
+  .tile-size {
+    width: 60px;
+    height: 60px;
+  }
+
+  @media (min-width: 640px) {
+    .tile-size {
+      width: 70px;
+      height: 70px;
+    }
+  }
+
+  @media (min-width: 768px) {
+    .tile-size {
+      width: 75px;
+      height: 75px;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .tile-size {
+      width: 80px;
+      height: 80px;
+    }
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 5px rgba(233, 69, 96, 0.5);
+  }
+
+  50% {
+    box-shadow: 0 0 20px rgba(233, 69, 96, 0.8);
+  }
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(233, 69, 96, 0.5);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(233, 69, 96, 0.8);
+}
+
+body {
+  background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
