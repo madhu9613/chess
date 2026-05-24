@@ -59,7 +59,7 @@ const Board = () => {
                                 whileHover={{ scale: 1.1 }}
                                 whileTap={{ scale: 0.95 }}
                                 onClick={() => dispatch(resetGame())}
-                                className="mt-6 px-8 py-3 bg-gradient-to-r from-accent to-orange-500 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-accent/50 transition-all duration-300 cursor-pointer"
+                                className="mt-6 px-8 py-3 bg-linear-to-r from-accent to-orange-500 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-accent/50 transition-all duration-300 cursor-pointer"
                             >
                                 New Game
                             </motion.button>

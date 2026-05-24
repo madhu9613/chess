@@ -4,16 +4,25 @@ import Board from '../components/Board/Board';
 import MoveList from '../components/MoveList';
 import GameControls from '../components/GameControls';
 import { motion } from 'framer-motion';
-import { selectGame, makeMove } from '../store/gameSlice';
+import { selectFEN, makeMove } from '../store/gameSlice';
+import { ChessGame } from '@mady9613/chess-engine';
+import { useMemo } from 'react';
 
 const Practice = () => {
     const dispatch = useDispatch();
-    const game = useSelector(selectGame);
+    const fen = useSelector(selectFEN);
+    const game = useMemo(() => {
+        const g = new ChessGame();
+        g.loadFEN(fen);
+        return g;
+    }, [fen]);
     const [aiThinking, setAiThinking] = useState(false);
     const [difficulty, setDifficulty] = useState('medium');
 
     const getRandomAIMove = () => {
-        const moves = game.getAllValidMoves();
+        const g = new ChessGame();
+        g.loadFEN(fen);
+        const moves = g.getAllValidMoves();
         if (moves.length > 0) {
             const randomMove = moves[Math.floor(Math.random() * moves.length)];
             const from = `${String.fromCharCode(97 + randomMove.from.col)}${8 - randomMove.from.row}`;
@@ -27,7 +36,9 @@ const Practice = () => {
         dispatch(makeMove({ from, to }));
 
         setTimeout(() => {
-            if (!game.isGameOver() && game.getTurn() !== 'w') {
+            const g2 = new ChessGame();
+            g2.loadFEN(fen);
+            if (!g2.isGameOver() && g2.getTurn() !== 'w') {
                 setAiThinking(true);
                 setTimeout(() => getRandomAIMove(), 500);
             }

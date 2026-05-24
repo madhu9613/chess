@@ -1,24 +1,13 @@
 import { createSlice, createSelector } from '@reduxjs/toolkit';
 import { ChessGame } from '@mady9613/chess-engine';
 
-// Use a transient ChessGame to get the initial FEN, but DO NOT store instances in Redux.
 const _initialGame = new ChessGame();
 const initialFEN = _initialGame.getFEN();
 
 const initialState = {
-    // Serializable game state: current FEN and positions list (each position includes fen and move metadata)
     fen: initialFEN,
-    positions: [
-        {
-            fen: initialFEN,
-            san: null,
-            move: null,
-            turn: 'w',
-            moveNumber: 0,
-        },
-    ],
+    history: [initialFEN],
     historyIndex: 0,
-
     ui: {
         selectedSquare: null,
         candidateMoves: [],
@@ -46,27 +35,13 @@ const gameSlice = createSlice({
             const { from, to, promotion } = action.payload;
             const g = new ChessGame();
             g.loadFEN(state.fen);
-            const mover = g.getTurn();
             const result = g.move({ from, to, promotion });
 
             if (result.success) {
                 const newFEN = g.getFEN();
-
-                // Trim future positions if branching
-                const trimmed = state.positions.slice(0, state.historyIndex + 1);
-
-                // Compute move metadata and push
-                const moveNumber = Math.floor(trimmed.length / 2) + 1;
-                trimmed.push({
-                    fen: newFEN,
-                    san: result.san || null,
-                    move: { from, to, promotion: promotion || null },
-                    turn: mover,
-                    moveNumber,
-                });
-
-                state.positions = trimmed;
-                state.historyIndex = trimmed.length - 1;
+                state.history = state.history.slice(0, state.historyIndex + 1);
+                state.history.push(newFEN);
+                state.historyIndex = state.history.length - 1;
                 state.fen = newFEN;
 
                 state.ui.selectedSquare = null;
@@ -77,8 +52,6 @@ const gameSlice = createSlice({
                 }
             }
         },
-
-        
 
         selectSquare: (state, action) => {
             const square = action.payload;
@@ -113,15 +86,7 @@ const gameSlice = createSlice({
             const g = new ChessGame();
             const baseFEN = g.getFEN();
             state.fen = baseFEN;
-            state.positions = [
-                {
-                    fen: baseFEN,
-                    san: null,
-                    move: null,
-                    turn: 'w',
-                    moveNumber: 0,
-                },
-            ];
+            state.history = [baseFEN];
             state.historyIndex = 0;
 
             state.ui.selectedSquare = null;
@@ -133,28 +98,17 @@ const gameSlice = createSlice({
         undoMove: (state) => {
             if (state.historyIndex > 0) {
                 state.historyIndex = state.historyIndex - 1;
-                state.fen = state.positions[state.historyIndex].fen;
+                state.fen = state.history[state.historyIndex];
             }
             state.ui.selectedSquare = null;
             state.ui.candidateMoves = [];
         },
 
         redoMove: (state) => {
-            if (state.historyIndex < state.positions.length - 1) {
+            if (state.historyIndex < state.history.length - 1) {
                 state.historyIndex = state.historyIndex + 1;
-                state.fen = state.positions[state.historyIndex].fen;
+                state.fen = state.history[state.historyIndex];
             }
-            state.ui.selectedSquare = null;
-            state.ui.candidateMoves = [];
-        },
-
-        goToMove: (state, action) => {
-            const index = action.payload;
-            if (typeof index !== 'number') return;
-            if (index < 0 || index >= state.positions.length) return;
-
-            state.historyIndex = index;
-            state.fen = state.positions[index].fen;
             state.ui.selectedSquare = null;
             state.ui.candidateMoves = [];
         },
@@ -194,47 +148,9 @@ const gameSlice = createSlice({
 
         syncGameState: (state, action) => {
             const fen = action.payload.fen;
-            const incomingMove = action.payload.move || null;
-            const incomingSan = action.payload.san || null;
-
-            if (!fen) return;
-
-            // If no history exists yet, initialize from incoming fen.
-            if (!state.positions.length) {
-                state.positions = [
-                    {
-                        fen,
-                        san: null,
-                        move: null,
-                        turn: 'w',
-                        moveNumber: 0,
-                    },
-                ];
-                state.historyIndex = 0;
-                state.fen = fen;
-                return;
-            }
-
-            const last = state.positions[state.positions.length - 1];
-
-            // If incoming position is new, append it to timeline.
-            if (last.fen !== fen) {
-                const inferredTurn = last.turn === 'w' ? 'b' : 'w';
-                const moveNumber = Math.floor(state.positions.length / 2) + 1;
-                state.positions.push({
-                    fen,
-                    san: incomingSan,
-                    move: incomingMove,
-                    turn: inferredTurn,
-                    moveNumber,
-                });
-            }
-
-            // Multiplayer requirement: on remote updates, always jump to current/latest position.
-            state.historyIndex = state.positions.length - 1;
-            state.fen = state.positions[state.historyIndex].fen;
-            state.ui.selectedSquare = null;
-            state.ui.candidateMoves = [];
+            state.fen = fen;
+            state.history = [fen];
+            state.historyIndex = 0;
         },
     },
 });
@@ -244,10 +160,9 @@ const gameSlice = createSlice({
 const selectGameState = (state) => state.game;
 
 export const selectFEN = (state) => state.game.fen;
-export const selectPositions = (state) => state.game.positions;
+export const selectHistory = (state) => state.game.history;
 export const selectHistoryIndex = (state) => state.game.historyIndex;
 
-// Derived selectors using ephemeral ChessGame instances and memoization
 export const selectBoard = createSelector([selectFEN], (fen) => {
     const g = new ChessGame();
     g.loadFEN(fen);
@@ -290,16 +205,15 @@ export const selectWinner = createSelector([selectFEN], (fen) => {
     return g.getWinner();
 });
 
-export const selectMoveHistory = createSelector([selectPositions], (positions) => {
-    const list = positions || [];
-    // skip initial position
-    return list.slice(1).map(p => ({ move: p.move, fen: p.fen, san: p.san, turn: p.turn, moveNumber: p.moveNumber }));
+export const selectMoveHistory = createSelector([selectFEN], (fen) => {
+    const g = new ChessGame();
+    g.loadFEN(fen);
+    return g.getMoveHistory();
 });
 
 export const selectCanUndo = (state) => state.game.historyIndex > 0;
-export const selectCanRedo = (state) => state.game.historyIndex < (state.game.positions ? state.game.positions.length - 1 : 0);
+export const selectCanRedo = (state) => state.game.historyIndex < state.game.history.length - 1;
 
-// UI Selectors
 export const selectSelectedSquare = (state) => state.game.ui.selectedSquare;
 
 export const selectCandidateMoves = createSelector([selectFEN, selectSelectedSquare], (fen, square) => {
@@ -311,14 +225,12 @@ export const selectCandidateMoves = createSelector([selectFEN, selectSelectedSqu
 
 export const selectCheckmateAnimation = (state) => state.game.ui.checkmateAnimation;
 
-// Multiplayer Selectors
 export const selectPlayerColor = (state) => state.game.multiplayer.playerColor;
 export const selectIsMyTurn = (state) => state.game.multiplayer.isMyTurn;
 export const selectOpponentJoined = (state) => state.game.multiplayer.opponentJoined;
 export const selectRoomId = (state) => state.game.multiplayer.roomId;
 export const selectOpponentName = (state) => state.game.multiplayer.opponentName;
 
-// Settings Selectors
 export const selectSoundEnabled = (state) => state.game.settings.soundEnabled;
 export const selectShowCoordinates = (state) => state.game.settings.showCoordinates;
 export const selectFlipBoard = (state) => state.game.settings.flipBoard;
@@ -333,7 +245,6 @@ export const {
     resetGame,
     undoMove,
     redoMove,
-    goToMove,
     setPlayerColor,
     setOpponentJoined,
     setMyTurn,
