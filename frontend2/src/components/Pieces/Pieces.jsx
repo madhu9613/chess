@@ -1,8 +1,9 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     makeMove,
+    resetGame,
     selectSquare,
     clearSelection,
     selectGame,
@@ -20,6 +21,7 @@ import {
 import PromoteModal from '../PromoteModal';
 import GameOverModal from '../GameOverModal';
 import socket from '../../socket/socket';
+import { useAuth } from '../../context/AuthContext';
 
 // Import piece images
 import wpImg from '../../assets/pieces/wp.png';
@@ -51,8 +53,9 @@ const pieceImages = {
     'bk': bkImg,
 };
 
-const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
+const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false, isSpectator = false, practiceColor = null }) => {
     const dispatch = useDispatch();
+    const { isAuthenticated } = useAuth();
     const game = useSelector(selectGame);
     const board = useSelector(selectBoard);
     const turn = useSelector(selectTurn);
@@ -70,6 +73,8 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
     const [showPromotion, setShowPromotion] = useState(false);
     const [pendingMove, setPendingMove] = useState(null);
     const [localSelectedSquare, setLocalSelectedSquare] = useState(null);
+    const readOnlyMode = isSpectator || (isMultiplayer && !isAuthenticated);
+    const localPlayerColor = practiceColor;
 
     // Get last move from game history
     const moveHistory = game.getMoveHistory();
@@ -89,6 +94,7 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
 
     // Handle move execution
     const executeMove = useCallback((fromRow, fromCol, toRow, toCol, promotionPiece = 'q') => {
+        if (readOnlyMode) return;
         const from = `${String.fromCharCode(97 + fromCol)}${8 - fromRow}`;
         const to = `${String.fromCharCode(97 + toCol)}${8 - toRow}`;
         const piece = board[fromRow][fromCol];
@@ -100,48 +106,60 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
             return;
         }
 
-        // Make the move
+        if (isMultiplayer && roomId) {
+            socket.emit('makeMove', { roomCode: roomId, move: { from, to, promotion: promotionPiece } }, (response) => {
+                if (!response?.success) {
+                    console.error('Multiplayer move rejected:', response?.error || 'Unknown error');
+                }
+            });
+            dispatch(clearSelection());
+            setLocalSelectedSquare(null);
+            return;
+        }
+
         dispatch(makeMove({ from, to }));
         dispatch(clearSelection());
         setLocalSelectedSquare(null);
-
-        // Emit for multiplayer
-        if (isMultiplayer && roomId) {
-            socket.emit('make-move', { roomId, move: { from, to } });
-        }
-    }, [board, dispatch, isMultiplayer, roomId, isPromotionMove]);
+    }, [board, dispatch, isMultiplayer, roomId, isPromotionMove, readOnlyMode]);
 
     // Handle promotion completion
     const handlePromotionComplete = useCallback((promotionPiece) => {
+        if (readOnlyMode) return;
         if (pendingMove) {
-            dispatch(makeMove({
-                from: pendingMove.from,
-                to: pendingMove.to,
-                promotion: promotionPiece
-            }));
+            if (isMultiplayer && roomId) {
+                socket.emit('makeMove', {
+                    roomCode: roomId,
+                    move: { from: pendingMove.from, to: pendingMove.to, promotion: promotionPiece }
+                }, (response) => {
+                    if (!response?.success) {
+                        console.error('Multiplayer promotion move rejected:', response?.error || 'Unknown error');
+                    }
+                });
+            } else {
+                dispatch(makeMove({
+                    from: pendingMove.from,
+                    to: pendingMove.to,
+                    promotion: promotionPiece
+                }));
+            }
+
             dispatch(clearSelection());
             setLocalSelectedSquare(null);
-
-            if (isMultiplayer && roomId) {
-                socket.emit('make-move', {
-                    roomId,
-                    move: { from: pendingMove.from, to: pendingMove.to, promotion: promotionPiece }
-                });
-            }
         }
         setShowPromotion(false);
         setPendingMove(null);
-    }, [pendingMove, dispatch, isMultiplayer, roomId]);
+    }, [pendingMove, dispatch, isMultiplayer, roomId, readOnlyMode]);
 
     // Handle square click (for mouse users)
     const handleSquareClick = useCallback((row, col, piece) => {
+        if (readOnlyMode) return;
         // In multiplayer, check if it's player's turn
         if (isMultiplayer && (!isMyTurn || (playerColor && piece && piece[0] !== playerColor))) {
             return;
         }
 
         // In local play, check turn
-        if (!isMultiplayer && piece && piece[0] !== turn) {
+        if (!isMultiplayer && piece && piece[0] !== (localPlayerColor || turn)) {
             return;
         }
 
@@ -154,28 +172,32 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
                 setLocalSelectedSquare(null);
 
                 // If clicking on own piece, select it
-                if (piece && (!isMultiplayer || piece[0] === playerColor)) {
+                if (piece && (!isMultiplayer ? piece[0] === (localPlayerColor || turn) : piece[0] === playerColor)) {
                     setLocalSelectedSquare({ row, col });
                     dispatch(selectSquare(`${String.fromCharCode(97 + col)}${8 - row}`));
                 }
             }
         } else {
             // Select piece
-            if (piece && (!isMultiplayer || piece[0] === playerColor)) {
+            if (piece && (!isMultiplayer ? piece[0] === (localPlayerColor || turn) : piece[0] === playerColor)) {
                 setLocalSelectedSquare({ row, col });
                 dispatch(selectSquare(`${String.fromCharCode(97 + col)}${8 - row}`));
             }
         }
-    }, [localSelectedSquare, isValidMoveDestination, executeMove, dispatch, isMultiplayer, isMyTurn, playerColor, turn, candidateMoves]);
+    }, [localSelectedSquare, isValidMoveDestination, executeMove, dispatch, isMultiplayer, isMyTurn, playerColor, turn, candidateMoves, readOnlyMode, localPlayerColor]);
 
     // Handle drag start
     const handleDragStart = useCallback((e, row, col, piece) => {
+        if (readOnlyMode) {
+            e.preventDefault();
+            return false;
+        }
         // Check if can drag
         if (isMultiplayer && (!isMyTurn || (playerColor && piece && piece[0] !== playerColor))) {
             e.preventDefault();
             return false;
         }
-        if (!isMultiplayer && piece && piece[0] !== turn) {
+        if (!isMultiplayer && piece && piece[0] !== (localPlayerColor || turn)) {
             e.preventDefault();
             return false;
         }
@@ -188,7 +210,7 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
         setLocalSelectedSquare({ row, col });
 
         e.dataTransfer.effectAllowed = 'move';
-    }, [dispatch, isMultiplayer, isMyTurn, playerColor, turn]);
+    }, [dispatch, isMultiplayer, isMyTurn, playerColor, turn, readOnlyMode, localPlayerColor]);
 
     // Handle drag over
     const handleDragOver = useCallback((e, row, col) => {
@@ -199,6 +221,7 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
 
     // Handle drop
     const handleDrop = useCallback((e, toRow, toCol) => {
+        if (readOnlyMode) return;
         e.preventDefault();
         setHoveredSquare(null);
 
@@ -209,7 +232,7 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
         }
 
         setDraggingPiece(null);
-    }, [isValidMoveDestination, executeMove]);
+    }, [isValidMoveDestination, executeMove, readOnlyMode]);
 
     // Get highlight class for a square
     const getHighlightClass = useCallback((row, col, piece) => {
@@ -269,7 +292,7 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
                         style={{
                             backgroundColor: isLightTile ? '#f0d9b5' : '#b58863',
                         }}
-                        className={`tile-size flex items-center justify-center cursor-pointer transition-all duration-200 relative border border-gray-700/30
+                        className={`flex aspect-square h-full w-full min-w-0 items-center justify-center cursor-pointer transition-all duration-200 relative border border-gray-700/30
               ${getHighlightClass(row, actualCol, piece)}
             `}
                         onClick={() => handleSquareClick(row, actualCol, piece)}
@@ -277,10 +300,10 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
                         onDrop={(e) => handleDrop(e, row, actualCol)}
                     >
                         {/* Coordinates */}
-                        <div className="absolute top-1 left-1 text-xs text-gray-600 opacity-40 pointer-events-none font-mono">
+                        <div className="absolute top-1 left-1 text-[clamp(0.45rem,1.1vw,0.7rem)] text-gray-600 opacity-40 pointer-events-none font-mono">
                             {actualCol === 0 && `${8 - row}`}
                         </div>
-                        <div className="absolute bottom-1 right-1 text-xs text-gray-600 opacity-40 pointer-events-none font-mono">
+                        <div className="absolute bottom-1 right-1 text-[clamp(0.45rem,1.1vw,0.7rem)] text-gray-600 opacity-40 pointer-events-none font-mono">
                             {row === (reversed ? 0 : 7) && `${String.fromCharCode(97 + actualCol)}`}
                         </div>
 
@@ -289,11 +312,11 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
                             <img
                                 src={pieceImages[piece]}
                                 alt={piece}
-                                className={`w-[85%] h-[85%] object-contain select-none pointer-events-auto
+                                                                className={`h-[82%] w-[82%] object-contain select-none pointer-events-auto
                   ${draggingPiece === `${row},${actualCol}` ? 'opacity-50 scale-95' : 'opacity-100 hover:scale-105'}
                   transition-all duration-200
                 `}
-                                draggable={!isMultiplayer || (isMyTurn && (!playerColor || piece[0] === playerColor))}
+                                draggable={!readOnlyMode && (!isMultiplayer || (isMyTurn && (!playerColor || piece[0] === playerColor)))}
                                 onDragStart={(e) => handleDragStart(e, row, actualCol, piece)}
                                 onDragEnd={() => setDraggingPiece(null)}
                             />
@@ -306,7 +329,7 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
 
                         {/* Valid move indicator */}
                         {isValidMoveDestination(row, actualCol) && !piece && (
-                            <div className="w-3 h-3 rounded-full bg-green-500/70 absolute" />
+                            <div className="absolute h-[clamp(0.45rem,1.4vw,0.75rem)] w-[clamp(0.45rem,1.4vw,0.75rem)] rounded-full bg-green-500/70" />
                         )}
                     </motion.div>
                 );
@@ -317,7 +340,7 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
 
     return (
         <div className="relative w-fit">
-            <div className="grid grid-cols-8 gap-0 border-4 border-gray-800 rounded-lg overflow-hidden shadow-2xl">
+            <div className="grid grid-cols-8 gap-0 border-4 border-gray-800 rounded-lg overflow-hidden shadow-2xl aspect-square w-full">
                 {renderBoard()}
             </div>
 
