@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -11,7 +11,7 @@ import {
 } from '../../store/gameSlice';
 import Pieces from '../Pieces/Pieces';
 
-const Board = () => {
+const Board = ({ reversed = false, roomId = null, isMultiplayer = false, isSpectator = false, practiceColor = null }) => {
     const dispatch = useDispatch();
     const turn = useSelector(selectTurn);
     const isCheck = useSelector(selectIsCheck);
@@ -19,13 +19,16 @@ const Board = () => {
     const isGameOver = useSelector(selectIsGameOver);
     const winner = useSelector(selectWinner);
 
-    const [showGameOver, setShowGameOver] = React.useState(false);
+    const [showGameOver, setShowGameOver] = useState(false);
 
     useEffect(() => {
         if (isCheckmate || isGameOver) {
-            setShowGameOver(true);
-            const timer = setTimeout(() => setShowGameOver(false), 3000);
-            return () => clearTimeout(timer);
+            const revealTimer = setTimeout(() => setShowGameOver(true), 0);
+            const hideTimer = setTimeout(() => setShowGameOver(false), 3000);
+            return () => {
+                clearTimeout(revealTimer);
+                clearTimeout(hideTimer);
+            };
         }
     }, [isCheckmate, isGameOver]);
 
@@ -69,8 +72,8 @@ const Board = () => {
             </AnimatePresence>
 
             {/* Game Board */}
-            <div className="relative w-fit rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/20 mx-auto">
-                <Pieces reversed={false} />
+            <div className="board-frame relative mx-auto w-full max-w-[min(92vw,560px)] overflow-hidden rounded-[1.75rem] ring-1 ring-white/15">
+                <Pieces reversed={reversed} roomId={roomId} isMultiplayer={isMultiplayer} isSpectator={isSpectator} practiceColor={practiceColor} />
             </div>
 
             {/* Turn Indicator */}

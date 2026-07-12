@@ -1,17 +1,16 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-// No animations: keep UI simple and static
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     makeMove,
+    resetGame,
     selectSquare,
     clearSelection,
-    selectMoveHistory,
-    resetGame,
+    selectGame,
     selectBoard,
     selectTurn,
     selectSelectedSquare,
     selectCandidateMoves,
-    selectFEN,
     selectPlayerColor,
     selectIsMyTurn,
     selectIsCheck,
@@ -22,7 +21,7 @@ import {
 import PromoteModal from '../PromoteModal';
 import GameOverModal from '../GameOverModal';
 import socket from '../../socket/socket';
-import { ChessGame } from '@mady9613/chess-engine';
+import { useAuth } from '../../context/AuthContext';
 
 // Import piece images
 import wpImg from '../../assets/pieces/wp.png';
@@ -54,14 +53,14 @@ const pieceImages = {
     'bk': bkImg,
 };
 
-const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
+const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false, isSpectator = false, practiceColor = null }) => {
     const dispatch = useDispatch();
+    const { isAuthenticated } = useAuth();
+    const game = useSelector(selectGame);
     const board = useSelector(selectBoard);
-    const moveHistory = useSelector(selectMoveHistory);
     const turn = useSelector(selectTurn);
     const selectedSquare = useSelector(selectSelectedSquare);
     const candidateMoves = useSelector(selectCandidateMoves);
-    const fen = useSelector(selectFEN);
     const playerColor = useSelector(selectPlayerColor);
     const isMyTurn = useSelector(selectIsMyTurn);
     const isCheck = useSelector(selectIsCheck);
@@ -74,20 +73,17 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
     const [showPromotion, setShowPromotion] = useState(false);
     const [pendingMove, setPendingMove] = useState(null);
     const [localSelectedSquare, setLocalSelectedSquare] = useState(null);
+    const readOnlyMode = isSpectator || (isMultiplayer && !isAuthenticated);
+    const localPlayerColor = practiceColor;
 
     // Get last move from game history
+    const moveHistory = game.getMoveHistory();
     const lastMove = moveHistory.length > 0 ? moveHistory[moveHistory.length - 1].move : null;
 
     // Helper to check if a square is a valid move destination
     const isValidMoveDestination = useCallback((row, col) => {
-        if (!localSelectedSquare) return false;
-        // Compute valid moves directly from the current FEN to avoid stale selector state
-        const fromAlg = `${String.fromCharCode(97 + localSelectedSquare.col)}${8 - localSelectedSquare.row}`;
-        const g = new ChessGame();
-        g.loadFEN(fen);
-        const moves = g.getValidMoves(fromAlg);
-        return moves.some(move => move.to.row === row && move.to.col === col);
-    }, [fen, localSelectedSquare]);
+        return candidateMoves.some(move => move.to.row === row && move.to.col === col);
+    }, [candidateMoves]);
 
     // Helper to check if a move is a promotion
     const isPromotionMove = useCallback((fromRow, fromCol, toRow, toCol, piece) => {
@@ -98,6 +94,7 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
 
     // Handle move execution
     const executeMove = useCallback((fromRow, fromCol, toRow, toCol, promotionPiece = 'q') => {
+        if (readOnlyMode) return;
         const from = `${String.fromCharCode(97 + fromCol)}${8 - fromRow}`;
         const to = `${String.fromCharCode(97 + toCol)}${8 - toRow}`;
         const piece = board[fromRow][fromCol];
@@ -109,87 +106,98 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
             return;
         }
 
-        // Make the move
-        dispatch(makeMove({ from, to }));
-        dispatch(clearSelection());
-        setLocalSelectedSquare(null);
-
-        // Emit for multiplayer
         if (isMultiplayer && roomId) {
-            socket.emit('make-move', { roomId, move: { from, to } });
-        }
-    }, [board, dispatch, isMultiplayer, roomId, isPromotionMove]);
-
-    // Handle promotion completion
-    const handlePromotionComplete = useCallback((promotionPiece) => {
-        if (pendingMove) {
-            dispatch(makeMove({
-                from: pendingMove.from,
-                to: pendingMove.to,
-                promotion: promotionPiece
-            }));
+            socket.emit('makeMove', { roomCode: roomId, move: { from, to, promotion: promotionPiece } }, (response) => {
+                if (!response?.success) {
+                    console.error('Multiplayer move rejected:', response?.error || 'Unknown error');
+                }
+            });
             dispatch(clearSelection());
             setLocalSelectedSquare(null);
-
-            if (isMultiplayer && roomId) {
-                socket.emit('make-move', {
-                    roomId,
-                    move: { from: pendingMove.from, to: pendingMove.to, promotion: promotionPiece }
-                });
-            }
-        }
-        setShowPromotion(false);
-        setPendingMove(null);
-    }, [pendingMove, dispatch, isMultiplayer, roomId]);
-
-    // Handle square click (for mouse users)
-    const handleSquareClick = useCallback((row, col, piece) => {
-        // If multiplayer, disallow actions when it's not the player's turn
-        if (isMultiplayer && !isMyTurn) return;
-
-        // If no local selection yet, only allow selecting your own piece
-        if (!localSelectedSquare) {
-            if (!piece) return;
-            if (isMultiplayer) {
-                if (playerColor && piece[0] !== playerColor) return;
-            } else {
-                if (piece[0] !== turn) return;
-            }
-
-            setLocalSelectedSquare({ row, col });
-            dispatch(selectSquare(`${String.fromCharCode(97 + col)}${8 - row}`));
             return;
         }
 
-        // If we have a selected piece, allow clicking any square (including opponent pieces) to attempt a move
-        if (isValidMoveDestination(row, col)) {
-            executeMove(localSelectedSquare.row, localSelectedSquare.col, row, col);
-        } else {
-            // Clear selection and optionally select another own piece
+        dispatch(makeMove({ from, to }));
+        dispatch(clearSelection());
+        setLocalSelectedSquare(null);
+    }, [board, dispatch, isMultiplayer, roomId, isPromotionMove, readOnlyMode]);
+
+    // Handle promotion completion
+    const handlePromotionComplete = useCallback((promotionPiece) => {
+        if (readOnlyMode) return;
+        if (pendingMove) {
+            if (isMultiplayer && roomId) {
+                socket.emit('makeMove', {
+                    roomCode: roomId,
+                    move: { from: pendingMove.from, to: pendingMove.to, promotion: promotionPiece }
+                }, (response) => {
+                    if (!response?.success) {
+                        console.error('Multiplayer promotion move rejected:', response?.error || 'Unknown error');
+                    }
+                });
+            } else {
+                dispatch(makeMove({
+                    from: pendingMove.from,
+                    to: pendingMove.to,
+                    promotion: promotionPiece
+                }));
+            }
+
             dispatch(clearSelection());
             setLocalSelectedSquare(null);
-            if (piece) {
-                if (isMultiplayer) {
-                    if (!playerColor || piece[0] === playerColor) {
-                        setLocalSelectedSquare({ row, col });
-                        dispatch(selectSquare(`${String.fromCharCode(97 + col)}${8 - row}`));
-                    }
-                } else if (piece[0] === turn) {
+        }
+        setShowPromotion(false);
+        setPendingMove(null);
+    }, [pendingMove, dispatch, isMultiplayer, roomId, readOnlyMode]);
+
+    // Handle square click (for mouse users)
+    const handleSquareClick = useCallback((row, col, piece) => {
+        if (readOnlyMode) return;
+        // In multiplayer, check if it's player's turn
+        if (isMultiplayer && (!isMyTurn || (playerColor && piece && piece[0] !== playerColor))) {
+            return;
+        }
+
+        // In local play, check turn
+        if (!isMultiplayer && piece && piece[0] !== (localPlayerColor || turn)) {
+            return;
+        }
+
+        if (localSelectedSquare) {
+            if (isValidMoveDestination(row, col)) {
+                executeMove(localSelectedSquare.row, localSelectedSquare.col, row, col);
+            } else {
+                // Clear selection if clicking an invalid square
+                dispatch(clearSelection());
+                setLocalSelectedSquare(null);
+
+                // If clicking on own piece, select it
+                if (piece && (!isMultiplayer ? piece[0] === (localPlayerColor || turn) : piece[0] === playerColor)) {
                     setLocalSelectedSquare({ row, col });
                     dispatch(selectSquare(`${String.fromCharCode(97 + col)}${8 - row}`));
                 }
             }
+        } else {
+            // Select piece
+            if (piece && (!isMultiplayer ? piece[0] === (localPlayerColor || turn) : piece[0] === playerColor)) {
+                setLocalSelectedSquare({ row, col });
+                dispatch(selectSquare(`${String.fromCharCode(97 + col)}${8 - row}`));
+            }
         }
-    }, [localSelectedSquare, isValidMoveDestination, executeMove, dispatch, isMultiplayer, isMyTurn, playerColor, turn]);
+    }, [localSelectedSquare, isValidMoveDestination, executeMove, dispatch, isMultiplayer, isMyTurn, playerColor, turn, candidateMoves, readOnlyMode, localPlayerColor]);
 
     // Handle drag start
     const handleDragStart = useCallback((e, row, col, piece) => {
+        if (readOnlyMode) {
+            e.preventDefault();
+            return false;
+        }
         // Check if can drag
         if (isMultiplayer && (!isMyTurn || (playerColor && piece && piece[0] !== playerColor))) {
             e.preventDefault();
             return false;
         }
-        if (!isMultiplayer && piece && piece[0] !== turn) {
+        if (!isMultiplayer && piece && piece[0] !== (localPlayerColor || turn)) {
             e.preventDefault();
             return false;
         }
@@ -202,7 +210,7 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
         setLocalSelectedSquare({ row, col });
 
         e.dataTransfer.effectAllowed = 'move';
-    }, [dispatch, isMultiplayer, isMyTurn, playerColor, turn]);
+    }, [dispatch, isMultiplayer, isMyTurn, playerColor, turn, readOnlyMode, localPlayerColor]);
 
     // Handle drag over
     const handleDragOver = useCallback((e, row, col) => {
@@ -213,6 +221,7 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
 
     // Handle drop
     const handleDrop = useCallback((e, toRow, toCol) => {
+        if (readOnlyMode) return;
         e.preventDefault();
         setHoveredSquare(null);
 
@@ -223,28 +232,29 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
         }
 
         setDraggingPiece(null);
-    }, [isValidMoveDestination, executeMove]);
+    }, [isValidMoveDestination, executeMove, readOnlyMode]);
 
-    // Get highlight class for a square (simple, no animations)
+    // Get highlight class for a square
     const getHighlightClass = useCallback((row, col, piece) => {
         const classes = [];
-    // Check/King in check highlight
+
+        // Check/King in check highlight - enhanced with better animation
         if (piece === `${turn}k` && isCheck) {
-            classes.push('ring-4 ring-red-500');
+            classes.push('ring-4 ring-red-500 animate-pulse-glow shadow-lg shadow-red-500/50');
         }
 
         // Selected square
         if (localSelectedSquare?.row === row && localSelectedSquare?.col === col) {
-            classes.push('ring-4 ring-yellow-400');
+            classes.push('ring-4 ring-yellow-400 ring-offset-2 scale-105 z-10 shadow-lg shadow-yellow-400/30');
         }
 
         // Valid move destination
         if (isValidMoveDestination(row, col)) {
             const isCapture = candidateMoves.some(m => m.to.row === row && m.to.col === col && m.capture);
             if (isCapture) {
-                classes.push('ring-2 ring-red-500');
+                classes.push('ring-2 ring-red-500 shadow-lg');
             } else {
-                classes.push('ring-2 ring-green-500');
+                classes.push('ring-2 ring-green-500/50 shadow-lg');
             }
         }
 
@@ -276,21 +286,24 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
                 const isHovered = hoveredSquare?.row === row && hoveredSquare?.col === actualCol;
 
                 squares.push(
-                    <div
+                    <motion.div
                         key={`${row}-${actualCol}`}
+                        whileTap={{ scale: 0.98 }}
                         style={{
                             backgroundColor: isLightTile ? '#f0d9b5' : '#b58863',
                         }}
-                        className={`tile-size flex items-center justify-center cursor-pointer relative border border-gray-700/30 ${getHighlightClass(row, actualCol, piece)}`}
+                        className={`flex aspect-square h-full w-full min-w-0 items-center justify-center cursor-pointer transition-all duration-200 relative border border-gray-700/30
+              ${getHighlightClass(row, actualCol, piece)}
+            `}
                         onClick={() => handleSquareClick(row, actualCol, piece)}
                         onDragOver={(e) => handleDragOver(e, row, actualCol)}
                         onDrop={(e) => handleDrop(e, row, actualCol)}
                     >
                         {/* Coordinates */}
-                        <div className="absolute top-1 left-1 text-xs text-gray-600 opacity-40 pointer-events-none font-mono">
+                        <div className="absolute top-1 left-1 text-[clamp(0.45rem,1.1vw,0.7rem)] text-gray-600 opacity-40 pointer-events-none font-mono">
                             {actualCol === 0 && `${8 - row}`}
                         </div>
-                        <div className="absolute bottom-1 right-1 text-xs text-gray-600 opacity-40 pointer-events-none font-mono">
+                        <div className="absolute bottom-1 right-1 text-[clamp(0.45rem,1.1vw,0.7rem)] text-gray-600 opacity-40 pointer-events-none font-mono">
                             {row === (reversed ? 0 : 7) && `${String.fromCharCode(97 + actualCol)}`}
                         </div>
 
@@ -299,8 +312,11 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
                             <img
                                 src={pieceImages[piece]}
                                 alt={piece}
-                                className="w-[85%] h-[85%] object-contain select-none pointer-events-auto"
-                                draggable={!isMultiplayer || (isMyTurn && (!playerColor || piece[0] === playerColor))}
+                                                                className={`h-[82%] w-[82%] object-contain select-none pointer-events-auto
+                  ${draggingPiece === `${row},${actualCol}` ? 'opacity-50 scale-95' : 'opacity-100 hover:scale-105'}
+                  transition-all duration-200
+                `}
+                                draggable={!readOnlyMode && (!isMultiplayer || (isMyTurn && (!playerColor || piece[0] === playerColor)))}
                                 onDragStart={(e) => handleDragStart(e, row, actualCol, piece)}
                                 onDragEnd={() => setDraggingPiece(null)}
                             />
@@ -313,9 +329,9 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
 
                         {/* Valid move indicator */}
                         {isValidMoveDestination(row, actualCol) && !piece && (
-                            <div className="w-3 h-3 rounded-full bg-green-500 absolute" />
+                            <div className="absolute h-[clamp(0.45rem,1.4vw,0.75rem)] w-[clamp(0.45rem,1.4vw,0.75rem)] rounded-full bg-green-500/70" />
                         )}
-                    </div>
+                    </motion.div>
                 );
             }
         }
@@ -324,31 +340,35 @@ const Pieces = ({ reversed = false, roomId = null, isMultiplayer = false }) => {
 
     return (
         <div className="relative w-fit">
-            <div className="grid grid-cols-8 gap-0 border-4 border-gray-800 rounded-lg overflow-hidden shadow-2xl">
+            <div className="grid grid-cols-8 gap-0 border-4 border-gray-800 rounded-lg overflow-hidden shadow-2xl aspect-square w-full">
                 {renderBoard()}
             </div>
 
             {/* Promotion Modal */}
-            {showPromotion && (
-                <PromoteModal
-                    onSelect={handlePromotionComplete}
-                    onClose={() => setShowPromotion(false)}
-                    color={pendingMove?.piece?.[0] || 'w'}
-                />
-            )}
+            <AnimatePresence>
+                {showPromotion && (
+                    <PromoteModal
+                        onSelect={handlePromotionComplete}
+                        onClose={() => setShowPromotion(false)}
+                        color={pendingMove?.piece?.[0] || 'w'}
+                    />
+                )}
+            </AnimatePresence>
 
             {/* Game Over Modal */}
-            {(isCheckmate || isStalemate) && (
-                <GameOverModal
-                    type={isCheckmate ? 'checkmate' : 'stalemate'}
-                    winner={winner}
-                    onNewGame={() => {
-                        dispatch(resetGame());
-                        setLocalSelectedSquare(null);
-                    }}
-                    onClose={() => { }}
-                />
-            )}
+            <AnimatePresence>
+                {(isCheckmate || isStalemate) && (
+                    <GameOverModal
+                        type={isCheckmate ? 'checkmate' : 'stalemate'}
+                        winner={winner}
+                        onNewGame={() => {
+                            dispatch(resetGame());
+                            setLocalSelectedSquare(null);
+                        }}
+                        onClose={() => { }}
+                    />
+                )}
+            </AnimatePresence>
         </div>
     );
 };

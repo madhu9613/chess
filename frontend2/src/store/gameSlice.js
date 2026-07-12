@@ -1,24 +1,10 @@
 import { createSlice, createSelector } from '@reduxjs/toolkit';
 import { ChessGame } from '@mady9613/chess-engine';
 
-// Use a transient ChessGame to get the initial FEN, but DO NOT store instances in Redux.
-const _initialGame = new ChessGame();
-const initialFEN = _initialGame.getFEN();
+const game = new ChessGame();
 
 const initialState = {
-    // Serializable game state: current FEN and positions list (each position includes fen and move metadata)
-    fen: initialFEN,
-    positions: [
-        {
-            fen: initialFEN,
-            san: null,
-            move: null,
-            turn: 'w',
-            moveNumber: 0,
-        },
-    ],
-    historyIndex: 0,
-
+    gameInstance: game,
     ui: {
         selectedSquare: null,
         candidateMoves: [],
@@ -44,31 +30,9 @@ const gameSlice = createSlice({
     reducers: {
         makeMove: (state, action) => {
             const { from, to, promotion } = action.payload;
-            const g = new ChessGame();
-            g.loadFEN(state.fen);
-            const mover = g.getTurn();
-            const result = g.move({ from, to, promotion });
+            const result = state.gameInstance.move({ from, to, promotion });
 
             if (result.success) {
-                const newFEN = g.getFEN();
-
-                // Trim future positions if branching
-                const trimmed = state.positions.slice(0, state.historyIndex + 1);
-
-                // Compute move metadata and push
-                const moveNumber = Math.floor(trimmed.length / 2) + 1;
-                trimmed.push({
-                    fen: newFEN,
-                    san: result.san || null,
-                    move: { from, to, promotion: promotion || null },
-                    turn: mover,
-                    moveNumber,
-                });
-
-                state.positions = trimmed;
-                state.historyIndex = trimmed.length - 1;
-                state.fen = newFEN;
-
                 state.ui.selectedSquare = null;
                 state.ui.candidateMoves = [];
 
@@ -76,16 +40,13 @@ const gameSlice = createSlice({
                     state.ui.checkmateAnimation = true;
                 }
             }
+            return state;
         },
-
-        
 
         selectSquare: (state, action) => {
             const square = action.payload;
-            const g = new ChessGame();
-            g.loadFEN(state.fen);
-            const piece = g.getPieceAt(square);
-            const currentTurn = g.getTurn();
+            const piece = state.gameInstance.getPieceAt(square);
+            const currentTurn = state.gameInstance.getTurn();
             const playerColor = state.multiplayer.playerColor;
 
             let canSelect = false;
@@ -97,7 +58,7 @@ const gameSlice = createSlice({
 
             if (canSelect) {
                 state.ui.selectedSquare = square;
-                state.ui.candidateMoves = g.getValidMoves(square);
+                state.ui.candidateMoves = state.gameInstance.getValidMoves(square);
             } else {
                 state.ui.selectedSquare = null;
                 state.ui.candidateMoves = [];
@@ -108,22 +69,16 @@ const gameSlice = createSlice({
             state.ui.selectedSquare = null;
             state.ui.candidateMoves = [];
         },
-        
-        resetGame: (state) => {
-            const g = new ChessGame();
-            const baseFEN = g.getFEN();
-            state.fen = baseFEN;
-            state.positions = [
-                {
-                    fen: baseFEN,
-                    san: null,
-                    move: null,
-                    turn: 'w',
-                    moveNumber: 0,
-                },
-            ];
-            state.historyIndex = 0;
 
+        // resetGame: (state) => {
+        //     state.gameInstance.reset();
+        //     state.ui.selectedSquare = null;
+        //     state.ui.candidateMoves = [];
+        //     state.ui.checkmateAnimation = false;
+        // },
+        // In gameSlice.js reducers, add:
+        resetGame: (state) => {
+            state.gameInstance.reset();
             state.ui.selectedSquare = null;
             state.ui.candidateMoves = [];
             state.ui.checkmateAnimation = false;
@@ -131,30 +86,13 @@ const gameSlice = createSlice({
         },
 
         undoMove: (state) => {
-            if (state.historyIndex > 0) {
-                state.historyIndex = state.historyIndex - 1;
-                state.fen = state.positions[state.historyIndex].fen;
-            }
+            state.gameInstance.undo();
             state.ui.selectedSquare = null;
             state.ui.candidateMoves = [];
         },
 
         redoMove: (state) => {
-            if (state.historyIndex < state.positions.length - 1) {
-                state.historyIndex = state.historyIndex + 1;
-                state.fen = state.positions[state.historyIndex].fen;
-            }
-            state.ui.selectedSquare = null;
-            state.ui.candidateMoves = [];
-        },
-
-        goToMove: (state, action) => {
-            const index = action.payload;
-            if (typeof index !== 'number') return;
-            if (index < 0 || index >= state.positions.length) return;
-
-            state.historyIndex = index;
-            state.fen = state.positions[index].fen;
+            state.gameInstance.redo();
             state.ui.selectedSquare = null;
             state.ui.candidateMoves = [];
         },
@@ -193,48 +131,28 @@ const gameSlice = createSlice({
         },
 
         syncGameState: (state, action) => {
-            const fen = action.payload.fen;
-            const incomingMove = action.payload.move || null;
-            const incomingSan = action.payload.san || null;
-
-            if (!fen) return;
-
-            // If no history exists yet, initialize from incoming fen.
-            if (!state.positions.length) {
-                state.positions = [
-                    {
-                        fen,
-                        san: null,
-                        move: null,
-                        turn: 'w',
-                        moveNumber: 0,
-                    },
-                ];
-                state.historyIndex = 0;
-                state.fen = fen;
-                return;
-            }
-
-            const last = state.positions[state.positions.length - 1];
-
-            // If incoming position is new, append it to timeline.
-            if (last.fen !== fen) {
-                const inferredTurn = last.turn === 'w' ? 'b' : 'w';
-                const moveNumber = Math.floor(state.positions.length / 2) + 1;
-                state.positions.push({
-                    fen,
-                    san: incomingSan,
-                    move: incomingMove,
-                    turn: inferredTurn,
-                    moveNumber,
-                });
-            }
-
-            // Multiplayer requirement: on remote updates, always jump to current/latest position.
-            state.historyIndex = state.positions.length - 1;
-            state.fen = state.positions[state.historyIndex].fen;
+            state.gameInstance.loadFEN(action.payload.fen);
             state.ui.selectedSquare = null;
             state.ui.candidateMoves = [];
+        },
+
+        applyMultiplayerMove: (state, action) => {
+            const { move, fen } = action.payload;
+            const result = state.gameInstance.move(move);
+            if (!result.success && fen) {
+                state.gameInstance.loadFEN(fen);
+            }
+
+            state.ui.selectedSquare = null;
+            state.ui.candidateMoves = [];
+        },
+
+        clearMultiplayerState: (state) => {
+            state.multiplayer.playerColor = null;
+            state.multiplayer.opponentJoined = false;
+            state.multiplayer.isMyTurn = false;
+            state.multiplayer.roomId = null;
+            state.multiplayer.opponentName = null;
         },
     },
 });
@@ -243,71 +161,28 @@ const gameSlice = createSlice({
 // Game instance selectors
 const selectGameState = (state) => state.game;
 
-export const selectFEN = (state) => state.game.fen;
-export const selectPositions = (state) => state.game.positions;
-export const selectHistoryIndex = (state) => state.game.historyIndex;
+export const selectGame = (state) => state.game.gameInstance;
 
-// Derived selectors using ephemeral ChessGame instances and memoization
-export const selectBoard = createSelector([selectFEN], (fen) => {
-    const g = new ChessGame();
-    g.loadFEN(fen);
-    return g.getBoard();
-});
+// Selectors for game instance
+export const selectBoard = (state) => state.game.gameInstance.getBoard();
 
-export const selectTurn = createSelector([selectFEN], (fen) => {
-    const g = new ChessGame();
-    g.loadFEN(fen);
-    return g.getTurn();
-});
+export const selectTurn = (state) => state.game.gameInstance.getTurn();
+export const selectIsCheck = (state) => state.game.gameInstance.isCheck();
+export const selectIsCheckmate = (state) => state.game.gameInstance.isCheckmate();
+export const selectIsStalemate = (state) => state.game.gameInstance.isStalemate();
+export const selectIsGameOver = (state) => state.game.gameInstance.isGameOver();
+export const selectWinner = (state) => state.game.gameInstance.getWinner();
 
-export const selectIsCheck = createSelector([selectFEN], (fen) => {
-    const g = new ChessGame();
-    g.loadFEN(fen);
-    return g.isCheck();
-});
+export const selectMoveHistory = (state) => state.game.gameInstance.getMoveHistory();
 
-export const selectIsCheckmate = createSelector([selectFEN], (fen) => {
-    const g = new ChessGame();
-    g.loadFEN(fen);
-    return g.isCheckmate();
-});
-
-export const selectIsStalemate = createSelector([selectFEN], (fen) => {
-    const g = new ChessGame();
-    g.loadFEN(fen);
-    return g.isStalemate();
-});
-
-export const selectIsGameOver = createSelector([selectFEN], (fen) => {
-    const g = new ChessGame();
-    g.loadFEN(fen);
-    return g.isGameOver();
-});
-
-export const selectWinner = createSelector([selectFEN], (fen) => {
-    const g = new ChessGame();
-    g.loadFEN(fen);
-    return g.getWinner();
-});
-
-export const selectMoveHistory = createSelector([selectPositions], (positions) => {
-    const list = positions || [];
-    // skip initial position
-    return list.slice(1).map(p => ({ move: p.move, fen: p.fen, san: p.san, turn: p.turn, moveNumber: p.moveNumber }));
-});
-
-export const selectCanUndo = (state) => state.game.historyIndex > 0;
-export const selectCanRedo = (state) => state.game.historyIndex < (state.game.positions ? state.game.positions.length - 1 : 0);
+export const selectCanUndo = (state) => state.game.gameInstance.canUndo();
+export const selectCanRedo = (state) => state.game.gameInstance.canRedo();
+export const selectFEN = (state) => state.game.gameInstance.getFEN();
 
 // UI Selectors
 export const selectSelectedSquare = (state) => state.game.ui.selectedSquare;
 
-export const selectCandidateMoves = createSelector([selectFEN, selectSelectedSquare], (fen, square) => {
-    if (!square) return [];
-    const g = new ChessGame();
-    g.loadFEN(fen);
-    return g.getValidMoves(square);
-});
+export const selectCandidateMoves = (state) => state.game.ui.candidateMoves;
 
 export const selectCheckmateAnimation = (state) => state.game.ui.checkmateAnimation;
 
@@ -333,7 +208,6 @@ export const {
     resetGame,
     undoMove,
     redoMove,
-    goToMove,
     setPlayerColor,
     setOpponentJoined,
     setMyTurn,
@@ -343,6 +217,8 @@ export const {
     toggleCoordinates,
     toggleSound,
     syncGameState,
+    applyMultiplayerMove,
+    clearMultiplayerState,
 } = gameSlice.actions;
 
 export default gameSlice.reducer;
