@@ -1,0 +1,28 @@
+{
+  "name": "@mady9613/chess-engine",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Comprehensive chess engine for move validation and game state management.",
+  "main": "src/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/madhu9613/chess-engine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/madhu9613/chess-engine/issues"
+  },
+  "homepage": "https://github.com/madhu9613/chess-engine#readme",
+  "author": "Madhujya Rajkhowa",
+  "license": "MIT",
+  "keywords": [
+    "chess",
+    "chess-engine",
+    "move-validation"
+  ],
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "test": "node test.js"
+  }
+}
