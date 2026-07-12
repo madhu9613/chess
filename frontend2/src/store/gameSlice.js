@@ -132,6 +132,27 @@ const gameSlice = createSlice({
 
         syncGameState: (state, action) => {
             state.gameInstance.loadFEN(action.payload.fen);
+            state.ui.selectedSquare = null;
+            state.ui.candidateMoves = [];
+        },
+
+        applyMultiplayerMove: (state, action) => {
+            const { move, fen } = action.payload;
+            const result = state.gameInstance.move(move);
+            if (!result.success && fen) {
+                state.gameInstance.loadFEN(fen);
+            }
+
+            state.ui.selectedSquare = null;
+            state.ui.candidateMoves = [];
+        },
+
+        clearMultiplayerState: (state) => {
+            state.multiplayer.playerColor = null;
+            state.multiplayer.opponentJoined = false;
+            state.multiplayer.isMyTurn = false;
+            state.multiplayer.roomId = null;
+            state.multiplayer.opponentName = null;
         },
     },
 });
@@ -196,6 +217,8 @@ export const {
     toggleCoordinates,
     toggleSound,
     syncGameState,
+    applyMultiplayerMove,
+    clearMultiplayerState,
 } = gameSlice.actions;
 
 export default gameSlice.reducer;
