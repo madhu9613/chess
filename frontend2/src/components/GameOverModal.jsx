@@ -1,4 +1,3 @@
-import React from 'react';
 import { motion } from 'framer-motion';
 import { Trophy, RefreshCw, Home } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -18,30 +17,32 @@ const GameOverModal = ({ type, winner, onNewGame, onClose }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md"
             onClick={onClose}
         >
             <motion.div
                 initial={{ scale: 0.8, y: 30 }}
                 animate={{ scale: 1, y: 0 }}
-                className="bg-gradient-to-br from-dark to-darker rounded-2xl p-8 border border-white/20 shadow-2xl text-center max-w-md w-full mx-4"
+                className="surface-panel relative mx-4 w-full max-w-md overflow-hidden rounded-[2rem] p-8 text-center"
                 onClick={(e) => e.stopPropagation()}
             >
-                <Trophy size={48} className="text-accent mx-auto mb-4" />
-                <h2 className="text-3xl font-bold mb-2">Game Over!</h2>
-                <p className="text-xl text-gray-300 mb-6">{getMessage()}</p>
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl gold-gradient text-[#130f08] shadow-lg shadow-black/20">
+                    <Trophy size={30} />
+                </div>
+                <h2 className="mb-2 text-3xl font-semibold text-white">Game Over</h2>
+                <p className="mb-6 text-lg text-white/72">{getMessage()}</p>
 
                 <div className="flex gap-3 justify-center">
                     <button
                         onClick={onNewGame}
-                        className="flex items-center gap-2 px-5 py-2 bg-accent rounded-lg hover:bg-accent/80 transition-colors"
+                        className="flex items-center gap-2 rounded-2xl border border-amber-300/20 bg-amber-300/15 px-5 py-2.5 font-semibold text-white transition-colors hover:bg-amber-300/25"
                     >
                         <RefreshCw size={18} />
                         New Game
                     </button>
                     <button
                         onClick={() => navigate('/')}
-                        className="flex items-center gap-2 px-5 py-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors"
+                        className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-2.5 font-semibold text-white/85 transition-colors hover:bg-white/10"
                     >
                         <Home size={18} />
                         Home
