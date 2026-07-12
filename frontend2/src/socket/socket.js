@@ -21,4 +21,12 @@ socket.on('connect_error', (error) => {
     console.error('Socket connection error:', error);
 });
 
+export const setSocketAuth = (token) => {
+    socket.auth = token ? { token } : {};
+    if (socket.connected) {
+        socket.disconnect();
+        socket.connect();
+    }
+};
+
 export default socket;
