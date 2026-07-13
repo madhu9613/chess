@@ -184,12 +184,41 @@ const Multiplayer = () => {
                 }, 2200);
                 return;
             }
+            if (reason === 'disconnect') {
+                setStatus(`Game over: ${winnerText} wins because the opponent disconnected. Saved to recent games.`);
+                return;
+            }
             setStatus(`Game over: ${reason}. Winner: ${winner === 'draw' ? 'Draw' : winner}`);
         };
 
-        const onOpponentDisconnected = () => {
+        const onOpponentDisconnected = ({ graceMs }) => {
             dispatch(setMyTurn(false));
-            setStatus('Opponent disconnected. You can create a new room.');
+            setClockRunning(false);
+            const seconds = Math.max(1, Math.ceil((graceMs || 50000) / 1000));
+            setStatus(`Opponent disconnected. Waiting ${seconds} seconds for reconnect before awarding the game.`);
+        };
+
+        const onDisconnectGraceStarted = ({ graceMs }) => {
+            const seconds = Math.max(1, Math.ceil((graceMs || 50000) / 1000));
+            setClockRunning(false);
+            setStatus(`Reconnect within ${seconds} seconds to continue the game.`);
+        };
+
+        const onOpponentReconnected = () => {
+            setClockRunning(true);
+            setStatus('Opponent reconnected. Game resumed.');
+        };
+
+        const onReconnectedRoom = ({ roomCode, color, timeControl: roomMode, fen, turn, ...clockPayload }) => {
+            dispatch(syncGameState({ fen: fen || START_FEN }));
+            dispatch(setRoomId(roomCode));
+            dispatch(setPlayerColor(color));
+            dispatch(setOpponentJoined(true));
+            dispatch(setMyTurn(turn === color));
+            setTimeControl(roomMode || selectedMode);
+            applyClockPayload(clockPayload);
+            setClockRunning(true);
+            setStatus(`Reconnected to room ${roomCode}. Game resumed.`);
         };
 
         const onChatMessage = (payload) => {
@@ -226,6 +255,9 @@ const Multiplayer = () => {
         socket.on('moveMade', onMoveMade);
         socket.on('gameOver', onGameOver);
         socket.on('opponentDisconnected', onOpponentDisconnected);
+        socket.on('disconnectGraceStarted', onDisconnectGraceStarted);
+        socket.on('opponentReconnected', onOpponentReconnected);
+        socket.on('reconnectedRoom', onReconnectedRoom);
         socket.on('chatMessage', onChatMessage);
         socket.on('roomPresenceUpdated', onPresenceUpdated);
         socket.on('gameClockUpdated', onClockUpdated);
@@ -245,6 +277,9 @@ const Multiplayer = () => {
             socket.off('moveMade', onMoveMade);
             socket.off('gameOver', onGameOver);
             socket.off('opponentDisconnected', onOpponentDisconnected);
+            socket.off('disconnectGraceStarted', onDisconnectGraceStarted);
+            socket.off('opponentReconnected', onOpponentReconnected);
+            socket.off('reconnectedRoom', onReconnectedRoom);
             socket.off('chatMessage', onChatMessage);
             socket.off('roomPresenceUpdated', onPresenceUpdated);
             socket.off('gameClockUpdated', onClockUpdated);
