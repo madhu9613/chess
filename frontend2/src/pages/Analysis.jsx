@@ -7,7 +7,7 @@ import Board from '../components/Board/Board';
 import MoveList from '../components/MoveList';
 import { selectFEN, syncGameState } from '../store/gameSlice';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL;
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 const LEVELS = [
