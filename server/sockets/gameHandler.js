@@ -3,6 +3,19 @@ import Game from '../models/Game.js';
 import { validateMove } from '../utils/chessValidator.js';
 import { chooseAIMove } from '../utils/socketfish.js';
 import { START_FEN, buildFFN } from '../utils/ffn.js';
+import { redisClient } from '../config/redis.js';
+import { enqueueNotification } from '../queues/notificationQueue.js';
+
+const TIME_CONTROLS = {
+    '5+0': 5 * 60 * 1000,
+    '15+0': 15 * 60 * 1000,
+};
+
+const MATCH_QUEUE_PREFIX = 'matchmaking:queue:';
+const MATCH_ENTRY_PREFIX = 'matchmaking:entry:';
+const MATCH_MODE_PREFIX = 'matchmaking:mode:';
+
+const CLOCK_INTERVALS = new Map();
 
 const buildPlayerPayload = (players) => players.map((player) => ({
     userId: player.userId,
@@ -11,6 +24,124 @@ const buildPlayerPayload = (players) => players.map((player) => ({
 
 const MAX_CHAT_MESSAGES = 40;
 const GUEST_CHAT_LIMIT = 5;
+
+const normalizeTimeControl = (value) => {
+    if (value === '5' || value === 5 || value === '5+0') return '5+0';
+    if (value === '15' || value === 15 || value === '15+0') return '15+0';
+    return '5+0';
+};
+
+const getInitialClockMs = (timeControl) => TIME_CONTROLS[normalizeTimeControl(timeControl)] || TIME_CONTROLS['5+0'];
+
+const getClockPayload = (room) => ({
+    whiteTimeMs: Math.max(0, Number(room.whiteTimeMs || 0)),
+    blackTimeMs: Math.max(0, Number(room.blackTimeMs || 0)),
+    activeColor: room.clockActiveColor || room.turn || 'w',
+    running: Boolean(room.clockRunning),
+    updatedAt: room.clockLastUpdatedAt || null,
+});
+
+const syncClockToNow = (room, nowMs = Date.now()) => {
+    if (!room.clockRunning || !room.clockLastUpdatedAt) {
+        return getClockPayload(room);
+    }
+
+    const elapsed = Math.max(0, nowMs - new Date(room.clockLastUpdatedAt).getTime());
+    const activeColor = room.clockActiveColor || room.turn || 'w';
+
+    if (activeColor === 'w') {
+        room.whiteTimeMs = Math.max(0, Number(room.whiteTimeMs || 0) - elapsed);
+    } else {
+        room.blackTimeMs = Math.max(0, Number(room.blackTimeMs || 0) - elapsed);
+    }
+
+    room.clockLastUpdatedAt = new Date(nowMs);
+    return getClockPayload(room);
+};
+
+const stopRoomClock = (roomCode) => {
+    const interval = CLOCK_INTERVALS.get(roomCode);
+    if (!interval) return;
+    clearInterval(interval);
+    CLOCK_INTERVALS.delete(roomCode);
+};
+
+const getMatchQueueKey = (timeControl) => `${MATCH_QUEUE_PREFIX}${normalizeTimeControl(timeControl)}`;
+const getMatchEntryKey = (socketId) => `${MATCH_ENTRY_PREFIX}${socketId}`;
+const getMatchModeKey = (socketId) => `${MATCH_MODE_PREFIX}${socketId}`;
+
+const enqueueMatchmakingNotification = async (socketId, type, message, extra = {}) => {
+    try {
+        await enqueueNotification(type, {
+            socketId,
+            message,
+            ...extra,
+        });
+    } catch (error) {
+        console.error('Notification enqueue error:', error.message);
+    }
+};
+
+const enqueueGameResultNotifications = async (room) => {
+    const winnerLabel = room.winner === 'w' ? 'White' : room.winner === 'b' ? 'Black' : 'Draw';
+    const reasonLabel = room.resultReason || 'finished';
+
+    await Promise.all((room.players || []).map((player) =>
+        enqueueMatchmakingNotification(
+            player.socketId,
+            'game_result',
+            `Game ${room.roomCode}: ${winnerLabel} wins by ${reasonLabel}`,
+            {
+                roomCode: room.roomCode,
+                userId: player.userId,
+                winner: room.winner,
+                resultReason: room.resultReason,
+            }
+        )
+    ));
+};
+
+const removeFromMatchmakingQueue = async (socketId) => {
+    const mode = await redisClient.get(getMatchModeKey(socketId));
+
+    if (mode) {
+        await redisClient.lrem(getMatchQueueKey(mode), 0, socketId);
+    }
+
+    for (const queueMode of Object.keys(TIME_CONTROLS)) {
+        await redisClient.lrem(getMatchQueueKey(queueMode), 0, socketId);
+    }
+
+    await redisClient.del(getMatchEntryKey(socketId), getMatchModeKey(socketId));
+};
+
+const dequeueWaitingOpponent = async (io, timeControl, currentSocketId) => {
+    const queueKey = getMatchQueueKey(timeControl);
+
+    while (true) {
+        const socketId = await redisClient.lpop(queueKey);
+        if (!socketId) return null;
+        if (socketId === currentSocketId) continue;
+
+        const rawEntry = await redisClient.get(getMatchEntryKey(socketId));
+        await redisClient.del(getMatchEntryKey(socketId), getMatchModeKey(socketId));
+        if (!rawEntry) continue;
+
+        let entry = null;
+        try {
+            entry = JSON.parse(rawEntry);
+        } catch {
+            entry = null;
+        }
+
+        if (!entry?.socketId) continue;
+
+        const queuedSocket = io.sockets.sockets.get(entry.socketId);
+        if (!queuedSocket || queuedSocket.data?.roomCode) continue;
+
+        return entry;
+    }
+};
 
 const getAuthenticatedUser = (socket) => socket.data?.authUser || null;
 
@@ -73,6 +204,9 @@ const upsertGameDocument = async (room) => {
     const payload = {
         roomCode: room.roomCode,
         players: buildPlayerPayload(room.players),
+        timeControl: normalizeTimeControl(room.timeControl),
+        whiteTimeMs: Number(room.whiteTimeMs || 0),
+        blackTimeMs: Number(room.blackTimeMs || 0),
         startFen: START_FEN,
         currentFen: room.currentFen,
         turn: room.turn,
@@ -99,14 +233,87 @@ const upsertGameDocument = async (room) => {
     );
 };
 
+const finalizeTimeout = (room, loserColor) => {
+    room.status = 'completed';
+    room.winner = loserColor === 'w' ? 'b' : 'w';
+    room.resultReason = 'timeout';
+    room.clockRunning = false;
+    room.endedAt = new Date();
+};
+
+const emitClockUpdate = (io, room) => {
+    io.to(room.roomCode).emit('gameClockUpdated', {
+        roomCode: room.roomCode,
+        ...getClockPayload(room),
+        timeControl: normalizeTimeControl(room.timeControl),
+    });
+};
+
+const startRoomClock = (io, roomCode) => {
+    stopRoomClock(roomCode);
+
+    const interval = setInterval(async () => {
+        try {
+            const room = await Room.findOne({ roomCode });
+            if (!room) {
+                stopRoomClock(roomCode);
+                return;
+            }
+
+            if (room.status !== 'playing' || !room.clockRunning) {
+                stopRoomClock(roomCode);
+                return;
+            }
+
+            syncClockToNow(room);
+
+            if (room.whiteTimeMs <= 0 || room.blackTimeMs <= 0) {
+                const timedOutColor = room.whiteTimeMs <= 0 ? 'w' : 'b';
+                finalizeTimeout(room, timedOutColor);
+                await room.save();
+                await upsertGameDocument(room);
+                await enqueueGameResultNotifications(room);
+                emitClockUpdate(io, room);
+                io.to(room.roomCode).emit('gameOver', {
+                    winner: room.winner,
+                    reason: room.resultReason,
+                    timedOutColor,
+                    ffn: room.ffn,
+                });
+                stopRoomClock(roomCode);
+                return;
+            }
+
+            await room.save();
+            emitClockUpdate(io, room);
+        } catch (error) {
+            console.error('Clock tick error:', error);
+        }
+    }, 1000);
+
+    CLOCK_INTERVALS.set(roomCode, interval);
+};
+
 export default (io, socket) => {
+    const makePlayerSocketPayload = (targetSocket, roomCode, color, userId, name) => {
+        targetSocket.data.roomCode = roomCode;
+        targetSocket.data.userId = userId;
+        targetSocket.data.role = 'player';
+        targetSocket.data.color = color;
+        targetSocket.data.name = name;
+        targetSocket.data.matchmakingMode = null;
+    };
+
     socket.on('createRoom', async (data, callback) => {
         try {
+            await removeFromMatchmakingQueue(socket.id);
             const authUser = getAuthenticatedUser(socket);
             if (!authUser) {
                 return callback?.({ success: false, error: 'Authentication required to play' });
             }
 
+            const timeControl = normalizeTimeControl(data?.timeControl);
+            const initialClockMs = getInitialClockMs(timeControl);
             const roomCode = await createUniqueRoomCode();
             const userId = authUser.sub;
             const room = new Room({
@@ -116,6 +323,12 @@ export default (io, socket) => {
                     color: 'w',
                     socketId: socket.id
                 }],
+                timeControl,
+                whiteTimeMs: initialClockMs,
+                blackTimeMs: initialClockMs,
+                clockActiveColor: 'w',
+                clockLastUpdatedAt: null,
+                clockRunning: false,
                 currentFen: START_FEN,
                 ffn: buildFFN([], START_FEN)
             });
@@ -123,12 +336,8 @@ export default (io, socket) => {
             await upsertGameDocument(room);
 
             socket.join(roomCode);
-            socket.data.roomCode = roomCode;
-            socket.data.userId = userId;
-            socket.data.role = 'player';
-            socket.data.color = 'w';
-            socket.data.name = authUser.name || 'White';
-            const response = { roomCode, color: 'w', userId };
+            makePlayerSocketPayload(socket, roomCode, 'w', userId, authUser.name || 'White');
+            const response = { roomCode, color: 'w', userId, timeControl, ...getClockPayload(room) };
             socket.emit('roomCreated', response);
             await emitRoomPresence(io, roomCode);
             if (callback) callback({ success: true, ...response });
@@ -140,6 +349,7 @@ export default (io, socket) => {
 
     socket.on('joinRoom', async (data, callback) => {
         try {
+            await removeFromMatchmakingQueue(socket.id);
             const { roomCode, userId } = data || {};
             const authUser = getAuthenticatedUser(socket);
             if (!authUser) return callback?.({ success: false, error: 'Authentication required to play' });
@@ -153,31 +363,170 @@ export default (io, socket) => {
 
             room.players.push({ userId: authUser.sub || userId || socket.id, color: 'b', socketId: socket.id });
             room.status = 'playing';
+            room.timeControl = normalizeTimeControl(room.timeControl);
+            const initialClockMs = getInitialClockMs(room.timeControl);
+            room.whiteTimeMs = Number(room.whiteTimeMs || initialClockMs);
+            room.blackTimeMs = Number(room.blackTimeMs || initialClockMs);
+            room.clockActiveColor = room.turn || 'w';
+            room.clockLastUpdatedAt = new Date();
+            room.clockRunning = true;
             room.updatedAt = new Date();
             await room.save();
             await upsertGameDocument(room);
+            startRoomClock(io, roomCode);
 
             socket.join(roomCode);
-            socket.data.roomCode = roomCode;
-            socket.data.userId = authUser.sub || userId || socket.id;
-            socket.data.role = 'player';
-            socket.data.color = 'b';
-            socket.data.name = authUser.name || 'Black';
-            const joinPayload = { roomCode, color: 'b', userId: authUser.sub || userId || socket.id };
+            makePlayerSocketPayload(socket, roomCode, 'b', authUser.sub || userId || socket.id, authUser.name || 'Black');
+            const joinPayload = {
+                roomCode,
+                color: 'b',
+                userId: authUser.sub || userId || socket.id,
+                timeControl: room.timeControl,
+                ...getClockPayload(room),
+            };
             socket.emit('joinedRoom', joinPayload);
             socket.to(roomCode).emit('opponentJoined', { roomCode });
             io.to(roomCode).emit('gameStart', {
                 roomCode,
                 fen: room.currentFen,
                 turn: room.turn,
-                players: buildPlayerPayload(room.players)
+                players: buildPlayerPayload(room.players),
+                timeControl: room.timeControl,
+                ...getClockPayload(room),
             });
+            emitClockUpdate(io, room);
             await emitRoomPresence(io, roomCode);
             if (callback) callback({ success: true, ...joinPayload });
         } catch (err) {
             console.error('Join room error:', err);
             if (callback) callback({ success: false, error: err.message });
         }
+    });
+
+    socket.on('findMatch', async (data, callback) => {
+        try {
+            const authUser = getAuthenticatedUser(socket);
+            if (!authUser) {
+                return callback?.({ success: false, error: 'Authentication required to play' });
+            }
+
+            if (socket.data?.roomCode) {
+                return callback?.({ success: false, error: 'Leave current room before matchmaking' });
+            }
+
+            const timeControl = normalizeTimeControl(data?.timeControl);
+            await removeFromMatchmakingQueue(socket.id);
+
+            const opponentEntry = await dequeueWaitingOpponent(io, timeControl, socket.id);
+
+            if (!opponentEntry) {
+                const entry = {
+                    socketId: socket.id,
+                    userId: authUser.sub,
+                    name: authUser.name || 'Player',
+                    queuedAt: Date.now(),
+                };
+
+                await redisClient.set(getMatchEntryKey(socket.id), JSON.stringify(entry), 'EX', 300);
+                await redisClient.set(getMatchModeKey(socket.id), timeControl, 'EX', 300);
+                await redisClient.rpush(getMatchQueueKey(timeControl), socket.id);
+
+                const queueSize = await redisClient.llen(getMatchQueueKey(timeControl));
+                socket.data.matchmakingMode = timeControl;
+                socket.emit('matchmakingQueued', { timeControl, queueSize });
+
+                await enqueueMatchmakingNotification(
+                    socket.id,
+                    'matchmaking_queued',
+                    `Queued for ${timeControl} matchmaking`,
+                    { timeControl, queueSize }
+                );
+
+                return callback?.({ success: true, queued: true, timeControl, queueSize });
+            }
+
+            const opponentSocket = io.sockets.sockets.get(opponentEntry.socketId);
+            if (!opponentSocket) {
+                return callback?.({ success: false, error: 'Matchmaking failed, please retry' });
+            }
+
+            const roomCode = await createUniqueRoomCode();
+            const initialClockMs = getInitialClockMs(timeControl);
+
+            const room = new Room({
+                roomCode,
+                players: [
+                    { userId: opponentEntry.userId, color: 'w', socketId: opponentSocket.id },
+                    { userId: authUser.sub, color: 'b', socketId: socket.id },
+                ],
+                timeControl,
+                whiteTimeMs: initialClockMs,
+                blackTimeMs: initialClockMs,
+                clockActiveColor: 'w',
+                clockLastUpdatedAt: new Date(),
+                clockRunning: true,
+                currentFen: START_FEN,
+                status: 'playing',
+                ffn: buildFFN([], START_FEN),
+            });
+
+            await room.save();
+            await upsertGameDocument(room);
+            startRoomClock(io, roomCode);
+
+            opponentSocket.join(roomCode);
+            socket.join(roomCode);
+
+            makePlayerSocketPayload(opponentSocket, roomCode, 'w', opponentEntry.userId, opponentEntry.name || 'White');
+            makePlayerSocketPayload(socket, roomCode, 'b', authUser.sub, authUser.name || 'Black');
+
+            const clockPayload = getClockPayload(room);
+            opponentSocket.emit('roomCreated', { roomCode, color: 'w', userId: opponentEntry.userId, timeControl, ...clockPayload });
+            socket.emit('joinedRoom', { roomCode, color: 'b', userId: authUser.sub, timeControl, ...clockPayload });
+
+            io.to(roomCode).emit('opponentJoined', { roomCode });
+            io.to(roomCode).emit('gameStart', {
+                roomCode,
+                fen: room.currentFen,
+                turn: room.turn,
+                players: buildPlayerPayload(room.players),
+                timeControl,
+                ...clockPayload,
+            });
+            emitClockUpdate(io, room);
+            await emitRoomPresence(io, roomCode);
+
+            opponentSocket.emit('matchFound', { roomCode, color: 'w', timeControl });
+            socket.emit('matchFound', { roomCode, color: 'b', timeControl });
+
+            await Promise.all([
+                enqueueMatchmakingNotification(
+                    opponentSocket.id,
+                    'match_found',
+                    `Match found (${timeControl}) in room ${roomCode}`,
+                    { roomCode, timeControl, color: 'w', userId: opponentEntry.userId }
+                ),
+                enqueueMatchmakingNotification(
+                    socket.id,
+                    'match_found',
+                    `Match found (${timeControl}) in room ${roomCode}`,
+                    { roomCode, timeControl, color: 'b', userId: authUser.sub }
+                ),
+            ]);
+
+            return callback?.({ success: true, queued: false, roomCode, color: 'b', timeControl });
+        } catch (err) {
+            console.error('Find match error:', err);
+            return callback?.({ success: false, error: err.message || 'Unable to match players' });
+        }
+    });
+
+    socket.on('cancelMatchmaking', async (data, callback) => {
+        const ack = typeof data === 'function' ? data : (typeof callback === 'function' ? callback : null);
+        await removeFromMatchmakingQueue(socket.id);
+        socket.data.matchmakingMode = null;
+        socket.emit('matchmakingCanceled', { success: true });
+        return ack?.({ success: true });
     });
 
     socket.on('watchRoom', async (data, callback) => {
@@ -211,6 +560,8 @@ export default (io, socket) => {
                 status: room.status,
                 winner: room.winner,
                 resultReason: room.resultReason,
+                timeControl: room.timeControl,
+                ...getClockPayload(room),
                 players: buildPlayerPayload(room.players),
                 ffn: room.ffn,
                 recentChat: (room.recentChat || []).map(buildChatPayload),
@@ -246,6 +597,8 @@ export default (io, socket) => {
                 status: room.status,
                 winner: room.winner,
                 resultReason: room.resultReason,
+                timeControl: room.timeControl,
+                ...getClockPayload(room),
                 players: buildPlayerPayload(room.players),
                 ffn: room.ffn,
                 recentChat: (room.recentChat || []).map(buildChatPayload),
@@ -344,6 +697,23 @@ export default (io, socket) => {
             if (!player) return callback?.({ success: false, error: 'Not a player' });
 
             const color = player.color;
+            syncClockToNow(room);
+            if ((color === 'w' && room.whiteTimeMs <= 0) || (color === 'b' && room.blackTimeMs <= 0)) {
+                finalizeTimeout(room, color);
+                await room.save();
+                await upsertGameDocument(room);
+                await enqueueGameResultNotifications(room);
+                emitClockUpdate(io, room);
+                io.to(roomCode).emit('gameOver', {
+                    winner: room.winner,
+                    reason: room.resultReason,
+                    timedOutColor: color,
+                    ffn: room.ffn,
+                });
+                stopRoomClock(roomCode);
+                return callback?.({ success: false, error: 'Time is over' });
+            }
+
             const validation = validateMove(room.currentFen, move, color);
             if (!validation.success) return callback?.({ success: false, error: validation.error });
 
@@ -358,6 +728,9 @@ export default (io, socket) => {
                 turn: color
             });
             room.ffn = buildFFN(room.moveHistory, START_FEN);
+            room.clockActiveColor = room.turn;
+            room.clockLastUpdatedAt = new Date();
+            room.clockRunning = room.status === 'playing';
             room.updatedAt = new Date();
 
             if (validation.checkmate || validation.stalemate) {
@@ -365,6 +738,7 @@ export default (io, socket) => {
                 room.winner = validation.checkmate ? color : 'draw';
                 room.resultReason = validation.checkmate ? 'checkmate' : 'stalemate';
                 room.endedAt = new Date();
+                room.clockRunning = false;
             }
 
             await room.save();
@@ -380,10 +754,16 @@ export default (io, socket) => {
                 checkmate: validation.checkmate,
                 stalemate: validation.stalemate,
                 turn: room.turn,
-                ffn: room.ffn
+                ffn: room.ffn,
+                timeControl: room.timeControl,
+                ...getClockPayload(room),
             });
 
+            emitClockUpdate(io, room);
+
             if (room.status === 'completed') {
+                stopRoomClock(roomCode);
+                await enqueueGameResultNotifications(room);
                 io.to(roomCode).emit('gameOver', {
                     winner: room.winner,
                     reason: room.resultReason,
@@ -391,35 +771,105 @@ export default (io, socket) => {
                 });
             }
 
-            if (callback) callback({ success: true });
+            if (callback) callback({ success: true, ...getClockPayload(room) });
         } catch (err) {
             console.error('Make move error:', err);
             if (callback) callback({ success: false, error: err.message });
         }
     });
 
+    socket.on('resignGame', async (data, callback) => {
+        try {
+            const { roomCode, userId } = data || {};
+            const authUser = getAuthenticatedUser(socket);
+            if (!authUser) {
+                return callback?.({ success: false, error: 'Authentication required to resign' });
+            }
+            if (!roomCode) {
+                return callback?.({ success: false, error: 'roomCode is required' });
+            }
+
+            const room = await Room.findOne({ roomCode });
+            if (!room || room.status !== 'playing') {
+                return callback?.({ success: false, error: 'Game not active' });
+            }
+
+            const resigningPlayer = room.players.find(
+                (player) => player.userId === authUser.sub || player.userId === userId || player.socketId === socket.id
+            );
+
+            if (!resigningPlayer) {
+                return callback?.({ success: false, error: 'Not a player in this room' });
+            }
+
+            room.status = 'completed';
+            room.winner = resigningPlayer.color === 'w' ? 'b' : 'w';
+            room.resultReason = 'resignation';
+            room.clockRunning = false;
+            room.endedAt = new Date();
+            room.updatedAt = new Date();
+            await room.save();
+            await upsertGameDocument(room);
+            stopRoomClock(room.roomCode);
+            await enqueueGameResultNotifications(room);
+
+            emitClockUpdate(io, room);
+            io.to(room.roomCode).emit('gameOver', {
+                winner: room.winner,
+                reason: room.resultReason,
+                ffn: room.ffn,
+            });
+
+            return callback?.({
+                success: true,
+                winner: room.winner,
+                reason: room.resultReason,
+            });
+        } catch (err) {
+            console.error('Resign game error:', err);
+            return callback?.({ success: false, error: err.message || 'Unable to resign game' });
+        }
+    });
+
     socket.on('requestAIMove', async (data, callback) => {
         try {
             const { fen, level = 'medium' } = data || {};
+            const ack = typeof callback === 'function' ? callback : null;
+            console.log('[Socket][AI] requestAIMove received', {
+                socketId: socket.id,
+                hasAck: Boolean(ack),
+                level,
+                fen,
+            });
+
             if (!fen) {
-                return callback?.({ success: false, error: 'fen is required' });
+                console.warn('[Socket][AI] requestAIMove rejected: fen is required');
+                return ack?.({ success: false, error: 'fen is required' });
             }
 
             const result = await chooseAIMove(fen, level);
             if (!result?.move) {
-                return callback?.({ success: false, error: 'Stockfish did not return a move' });
+                console.warn('[Socket][AI] requestAIMove: no move returned');
+                return ack?.({ success: false, error: 'Stockfish did not return a move' });
             }
 
-            return callback?.({ success: true, ...result });
+            console.log('[Socket][AI] requestAIMove success', {
+                socketId: socket.id,
+                level,
+                move: result.move,
+            });
+
+            return ack?.({ success: true, ...result });
         } catch (err) {
             console.error('AI move request error:', err);
-            return callback?.({ success: false, error: err.message || 'Unable to get AI move' });
+            return (typeof callback === 'function' ? callback : null)?.({ success: false, error: err.message || 'Unable to get AI move' });
         }
     });
 
     socket.on('disconnect', async () => {
         console.log('Client disconnected:', socket.id);
         try {
+            await removeFromMatchmakingQueue(socket.id);
             const roomCode = socket.data?.roomCode;
             const role = socket.data?.role;
 
@@ -439,9 +889,12 @@ export default (io, socket) => {
                 room.status = 'completed';
                 room.winner = remainingPlayer.color;
                 room.resultReason = 'disconnect';
+                room.clockRunning = false;
                 room.endedAt = new Date();
                 await room.save();
                 await upsertGameDocument(room);
+                stopRoomClock(room.roomCode);
+                await enqueueGameResultNotifications(room);
 
                 io.to(room.roomCode).emit('opponentDisconnected', {
                     roomCode: room.roomCode,
@@ -456,6 +909,7 @@ export default (io, socket) => {
             }
 
             if (room.players.length === 0) {
+                stopRoomClock(room.roomCode);
                 await Room.deleteOne({ roomCode: room.roomCode });
                 await Game.findOneAndUpdate(
                     { roomCode: room.roomCode },

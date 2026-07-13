@@ -17,6 +17,9 @@ const playerSchema = new mongoose.Schema({
 const gameSchema = new mongoose.Schema({
     roomCode: { type: String, required: true, unique: true, index: true },
     players: { type: [playerSchema], default: [] },
+    timeControl: { type: String, enum: ['5+0', '15+0'], default: '5+0' },
+    whiteTimeMs: { type: Number, default: 5 * 60 * 1000 },
+    blackTimeMs: { type: Number, default: 5 * 60 * 1000 },
     startFen: {
         type: String,
         default: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'

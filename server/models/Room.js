@@ -31,6 +31,12 @@ const guestChatCountSchema = new mongoose.Schema({
 const roomSchema = new mongoose.Schema({
     roomCode: { type: String, unique: true, required: true, index: true },
     players: [playerSchema],
+    timeControl: { type: String, enum: ['5+0', '15+0'], default: '5+0' },
+    whiteTimeMs: { type: Number, default: 5 * 60 * 1000 },
+    blackTimeMs: { type: Number, default: 5 * 60 * 1000 },
+    clockActiveColor: { type: String, enum: ['w', 'b', null], default: 'w' },
+    clockLastUpdatedAt: { type: Date, default: null },
+    clockRunning: { type: Boolean, default: false },
     currentFen: {
         type: String,
         default: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
