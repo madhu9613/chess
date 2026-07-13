@@ -10,6 +10,7 @@ import authRoutes from './routes/auth.js';
 import aiRoutes from './routes/ai.js';
 import roomRoutes from './routes/rooms.js';
 import { verifyAuthToken } from './utils/auth.js';
+import { startNotificationWorker } from './queues/notificationQueue.js';
 
 const app = express();
 const server = createServer(app);
@@ -59,6 +60,8 @@ io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
     gameHandler(io, socket);
 });
+
+startNotificationWorker(io);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
