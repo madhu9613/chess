@@ -1,4 +1,5 @@
 import express from 'express';
+import https from 'https';
 import User from '../models/User.js';
 import {
     buildSetCookie,
@@ -12,7 +13,6 @@ import {
     verifyAuthToken,
     verifyPassword,
 } from '../utils/auth.js';
-
 const router = express.Router();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const API_BASE_URL = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -27,6 +27,39 @@ const buildUserResponse = (user) => ({
     email: user.email,
     provider: user.provider,
     avatarUrl: user.avatarUrl || null,
+});
+
+const requestJson = (url, { method = 'GET', headers = {}, body } = {}) => new Promise((resolve, reject) => {
+    const request = https.request(url, {
+        method,
+        headers,
+    }, (response) => {
+        let responseBody = '';
+
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => {
+            responseBody += chunk;
+        });
+        response.on('end', () => {
+            try {
+                resolve({
+                    ok: response.statusCode >= 200 && response.statusCode < 300,
+                    status: response.statusCode,
+                    json: responseBody ? JSON.parse(responseBody) : {},
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
+    });
+
+    request.on('error', reject);
+
+    if (body) {
+        request.write(body);
+    }
+
+    request.end();
 });
 
 const getSignedInUser = async (req) => {
@@ -161,7 +194,7 @@ router.get('/google/callback', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Invalid Google auth state' });
         }
 
-        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        const tokenResponse = await requestJson('https://oauth2.googleapis.com/token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({
@@ -170,18 +203,18 @@ router.get('/google/callback', async (req, res) => {
                 client_secret: GOOGLE_CLIENT_SECRET,
                 redirect_uri: GOOGLE_REDIRECT_URI,
                 grant_type: 'authorization_code',
-            }),
+            }).toString(),
         });
 
-        const tokenData = await tokenResponse.json();
+        const tokenData = tokenResponse.json;
         if (!tokenResponse.ok) {
             return res.status(400).json({ success: false, error: tokenData.error_description || tokenData.error || 'Google token exchange failed' });
         }
 
-        const profileResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        const profileResponse = await requestJson('https://www.googleapis.com/oauth2/v3/userinfo', {
             headers: { Authorization: `Bearer ${tokenData.access_token}` },
         });
-        const profile = await profileResponse.json();
+        const profile = profileResponse.json;
         if (!profileResponse.ok) {
             return res.status(400).json({ success: false, error: profile.error || 'Failed to fetch Google profile' });
         }
