@@ -11,11 +11,15 @@ const TIME_CONTROLS = {
     '15+0': 15 * 60 * 1000,
 };
 
+const DISCONNECT_GRACE_MS = 50 * 1000;
+
 const MATCH_QUEUE_PREFIX = 'matchmaking:queue:';
 const MATCH_ENTRY_PREFIX = 'matchmaking:entry:';
 const MATCH_MODE_PREFIX = 'matchmaking:mode:';
 
 const CLOCK_INTERVALS = new Map();
+const DISCONNECT_GRACE_TIMERS = new Map();
+const DISCONNECT_GRACE_STATE = new Map();
 
 const buildPlayerPayload = (players) => players.map((player) => ({
     userId: player.userId,
@@ -64,6 +68,144 @@ const stopRoomClock = (roomCode) => {
     if (!interval) return;
     clearInterval(interval);
     CLOCK_INTERVALS.delete(roomCode);
+};
+
+const clearDisconnectGrace = (roomCode) => {
+    const timeout = DISCONNECT_GRACE_TIMERS.get(roomCode);
+    if (timeout) {
+        clearTimeout(timeout);
+    }
+    DISCONNECT_GRACE_TIMERS.delete(roomCode);
+    DISCONNECT_GRACE_STATE.delete(roomCode);
+};
+
+const buildRoomSnapshot = (room) => ({
+    roomCode: room.roomCode,
+    fen: room.currentFen,
+    turn: room.turn,
+    status: room.status,
+    winner: room.winner,
+    resultReason: room.resultReason,
+    players: buildPlayerPayload(room.players),
+    ffn: room.ffn,
+    timeControl: room.timeControl,
+    ...getClockPayload(room),
+});
+const restorePlayerSocket = async (io, socket, room, player, { emitResumeEvents = true } = {}) => {
+    clearDisconnectGrace(room.roomCode);
+
+    player.socketId = socket.id;
+    room.updatedAt = new Date();
+
+    if (room.status === 'playing') {
+        room.clockActiveColor = room.turn || player.color;
+        room.clockLastUpdatedAt = new Date();
+        room.clockRunning = true;
+    }
+
+    socket.join(room.roomCode);
+    socket.data.roomCode = room.roomCode;
+    socket.data.userId = player.userId;
+    socket.data.role = 'player';
+    socket.data.color = player.color;
+    socket.data.name = socket.data?.authUser?.name || (player.color === 'w' ? 'White' : 'Black');
+    socket.data.matchmakingMode = null;
+
+    await room.save();
+    await upsertGameDocument(room);
+
+    if (room.status === 'playing') {
+        startRoomClock(io, room.roomCode);
+    }
+
+    socket.emit('reconnectedRoom', {
+        ...buildRoomSnapshot(room),
+        color: player.color,
+        userId: player.userId,
+    });
+
+    if (emitResumeEvents) {
+        io.to(room.roomCode).emit('opponentReconnected', {
+            roomCode: room.roomCode,
+            userId: player.userId,
+        });
+        emitClockUpdate(io, room);
+        await emitRoomPresence(io, room.roomCode);
+    }
+};
+const startDisconnectGrace = async (io, room, disconnectedPlayer, remainingPlayer) => {
+    clearDisconnectGrace(room.roomCode);
+
+    room.clockRunning = false;
+    room.updatedAt = new Date();
+    await room.save();
+    await upsertGameDocument(room);
+    emitClockUpdate(io, room);
+
+    const expiresAt = Date.now() + DISCONNECT_GRACE_MS;
+    DISCONNECT_GRACE_STATE.set(room.roomCode, {
+        userId: disconnectedPlayer.userId,
+        color: disconnectedPlayer.color,
+        expiresAt,
+    });
+
+    io.to(room.roomCode).emit('opponentDisconnected', {
+        roomCode: room.roomCode,
+        userId: disconnectedPlayer.userId,
+        color: disconnectedPlayer.color,
+        graceMs: DISCONNECT_GRACE_MS,
+        expiresAt,
+    });
+
+    io.to(room.roomCode).emit('disconnectGraceStarted', {
+        roomCode: room.roomCode,
+        userId: disconnectedPlayer.userId,
+        color: disconnectedPlayer.color,
+        graceMs: DISCONNECT_GRACE_MS,
+        expiresAt,
+    });
+
+    const timeout = setTimeout(async () => {
+        try {
+            const pending = DISCONNECT_GRACE_STATE.get(room.roomCode);
+            if (!pending || pending.userId !== disconnectedPlayer.userId) {
+                return;
+            }
+
+            const currentRoom = await Room.findOne({ roomCode: room.roomCode });
+            if (!currentRoom || currentRoom.status !== 'playing') {
+                clearDisconnectGrace(room.roomCode);
+                return;
+            }
+
+            const activePending = DISCONNECT_GRACE_STATE.get(room.roomCode);
+            if (!activePending || activePending.userId !== disconnectedPlayer.userId) {
+                return;
+            }
+
+            currentRoom.status = 'completed';
+            currentRoom.winner = remainingPlayer.color;
+            currentRoom.resultReason = 'disconnect';
+            currentRoom.clockRunning = false;
+            currentRoom.endedAt = new Date();
+            currentRoom.updatedAt = new Date();
+            await currentRoom.save();
+            await upsertGameDocument(currentRoom);
+            await enqueueGameResultNotifications(currentRoom);
+
+            io.to(currentRoom.roomCode).emit('gameOver', {
+                winner: currentRoom.winner,
+                reason: currentRoom.resultReason,
+                ffn: currentRoom.ffn,
+            });
+        } catch (error) {
+            console.error('Disconnect grace timeout error:', error);
+        } finally {
+            clearDisconnectGrace(room.roomCode);
+        }
+    }, DISCONNECT_GRACE_MS);
+
+    DISCONNECT_GRACE_TIMERS.set(room.roomCode, timeout);
 };
 
 const getMatchQueueKey = (timeControl) => `${MATCH_QUEUE_PREFIX}${normalizeTimeControl(timeControl)}`;
@@ -144,6 +286,39 @@ const dequeueWaitingOpponent = async (io, timeControl, currentSocketId) => {
 };
 
 const getAuthenticatedUser = (socket) => socket.data?.authUser || null;
+
+const restoreActiveRoomConnection = async (io, socket) => {
+    const authUser = getAuthenticatedUser(socket);
+    if (!authUser?.sub) {
+        return;
+    }
+
+    const room = await Room.findOne({
+        status: 'playing',
+        'players.userId': authUser.sub,
+    });
+
+    if (!room) {
+        return;
+    }
+
+    const player = room.players.find((entry) => entry.userId === authUser.sub);
+    if (!player) {
+        return;
+    }
+
+    if (player.socketId === socket.id) {
+        socket.join(room.roomCode);
+        socket.data.roomCode = room.roomCode;
+        socket.data.userId = player.userId;
+        socket.data.role = 'player';
+        socket.data.color = player.color;
+        socket.data.name = authUser.name || (player.color === 'w' ? 'White' : 'Black');
+        return;
+    }
+
+    await restorePlayerSocket(io, socket, room, player);
+};
 
 const getGuestCommentCount = (room, guestId) => room.guestChatCounts?.find((entry) => entry.guestId === guestId)?.count || 0;
 
@@ -295,6 +470,10 @@ const startRoomClock = (io, roomCode) => {
 };
 
 export default (io, socket) => {
+    void restoreActiveRoomConnection(io, socket).catch((error) => {
+        console.error('Restore active room connection error:', error);
+    });
+
     const makePlayerSocketPayload = (targetSocket, roomCode, color, userId, name) => {
         targetSocket.data.roomCode = roomCode;
         targetSocket.data.userId = userId;
@@ -356,10 +535,25 @@ export default (io, socket) => {
             if (!roomCode) return callback?.({ success: false, error: 'roomCode is required' });
             const room = await Room.findOne({ roomCode });
             if (!room) return callback?.({ success: false, error: 'Room not found' });
-            if (room.players.length >= 2) return callback?.({ success: false, error: 'Room full' });
-            if (room.players.some(p => p.socketId === socket.id))
-                return callback?.({ success: false, error: 'Already in room' });
+            const existingPlayer = room.players.find((player) => player.userId === authUser.sub || player.socketId === socket.id);
             if (room.status === 'completed') return callback?.({ success: false, error: 'Game already completed' });
+
+            if (existingPlayer) {
+                await restorePlayerSocket(io, socket, room, existingPlayer);
+
+                const joinPayload = {
+                    roomCode,
+                    color: existingPlayer.color,
+                    userId: existingPlayer.userId,
+                    timeControl: room.timeControl,
+                    ...getClockPayload(room),
+                };
+
+                if (callback) callback({ success: true, ...joinPayload });
+                return;
+            }
+
+            if (room.players.length >= 2) return callback?.({ success: false, error: 'Room full' });
 
             room.players.push({ userId: authUser.sub || userId || socket.id, color: 'b', socketId: socket.id });
             room.status = 'playing';
@@ -883,33 +1077,18 @@ export default (io, socket) => {
             const disconnected = room.players.find((player) => player.socketId === socket.id);
             const remainingPlayer = room.players.find((player) => player.socketId !== socket.id);
 
-            room.players = room.players.filter((player) => player.socketId !== socket.id);
-
-            if (room.status === 'playing' && remainingPlayer) {
-                room.status = 'completed';
-                room.winner = remainingPlayer.color;
-                room.resultReason = 'disconnect';
-                room.clockRunning = false;
-                room.endedAt = new Date();
-                await room.save();
-                await upsertGameDocument(room);
+            if (room.status === 'playing' && remainingPlayer && disconnected) {
+                syncClockToNow(room);
                 stopRoomClock(room.roomCode);
-                await enqueueGameResultNotifications(room);
-
-                io.to(room.roomCode).emit('opponentDisconnected', {
-                    roomCode: room.roomCode,
-                    userId: disconnected?.userId || null
-                });
-                io.to(room.roomCode).emit('gameOver', {
-                    winner: room.winner,
-                    reason: 'disconnect',
-                    ffn: room.ffn
-                });
+                await startDisconnectGrace(io, room, disconnected, remainingPlayer);
                 return;
             }
 
+            room.players = room.players.filter((player) => player.socketId !== socket.id);
+
             if (room.players.length === 0) {
                 stopRoomClock(room.roomCode);
+                clearDisconnectGrace(room.roomCode);
                 await Room.deleteOne({ roomCode: room.roomCode });
                 await Game.findOneAndUpdate(
                     { roomCode: room.roomCode },
