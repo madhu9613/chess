@@ -1,36 +1,36 @@
 services:
 
-  server:
-    build:
-      context: ./server
+  # server:
+  #   build:
+  #     context: ./server
 
-    container_name: chess-server
+  #   container_name: chess-server
 
-    ports:
-      - "5000:5000"
+  #   ports:
+  #     - "5000:5000"
 
-    env_file:
-      - ./server/.env
+  #   env_file:
+  #     - ./server/.env
 
-    depends_on:
-      - redis
+  #   depends_on:
+  #     - redis
 
-    restart: unless-stopped
+  #   restart: unless-stopped
 
 
-  frontend:
-    build:
-      context: ./frontend2
+  # frontend:
+  #   build:
+  #     context: ./frontend2
 
-    container_name: chess-frontend
+  #   container_name: chess-frontend
 
-    ports:
-      - "3000:80"
+  #   ports:
+  #     - "3000:80"
 
-    depends_on:
-      - server
+  #   depends_on:
+  #     - server
 
-    restart: unless-stopped
+  #   restart: unless-stopped
 
 
   redis:

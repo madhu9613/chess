@@ -48,7 +48,8 @@ const initializeEngine = async () => {
     const engine = await stockfish();
     engine.sendCommand('uci');
     engine.sendCommand('setoption name Threads value 1');
-    engine.sendCommand('setoption name Hash value 32');
+    // engine.sendCommand('setoption name Hash value 32');
+    engine.sendCommand('setoption name Hash value 8');
     engine.sendCommand('setoption name UCI_ShowWDL value true');
     engine.sendCommand('isready');
     return engine;
@@ -62,10 +63,10 @@ const getEngine = async () => {
     return enginePromise;
 };
 
-enginePromise = initializeEngine().catch((error) => {
-    enginePromise = null;
-    throw error;
-});
+// enginePromise = initializeEngine().catch((error) => {
+//     enginePromise = null;
+//     throw error;
+// });
 
 const parseScore = (line) => {
     const mateMatch = line.match(/score mate (-?\d+)/);
