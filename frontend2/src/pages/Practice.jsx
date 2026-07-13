@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
 import { Bot, Crown } from 'lucide-react';
@@ -24,13 +24,17 @@ const Practice = () => {
     const [difficulty, setDifficulty] = useState('medium');
     const [aiThinking, setAiThinking] = useState(false);
     const [status, setStatus] = useState('Play white against Stockfish.');
+    const aiRequestIdRef = useRef(0);
 
     useEffect(() => {
         let cancelled = false;
         let timeoutId = null;
 
         const playAIMove = async () => {
-            if (turn !== 'b' || isGameOver || aiThinking) return;
+            if (turn !== 'b' || isGameOver) return;
+
+            const requestId = aiRequestIdRef.current + 1;
+            aiRequestIdRef.current = requestId;
 
             setAiThinking(true);
             setStatus('Stockfish is thinking...');
@@ -41,6 +45,14 @@ const Practice = () => {
                 return;
             }
 
+            console.log('[Practice][AI] requestAIMove ->', {
+                requestId,
+                level: difficulty,
+                turn,
+                fen,
+                socketId: socket.id,
+            });
+
             timeoutId = window.setTimeout(() => {
                 if (!cancelled) {
                     setStatus('Stockfish is taking too long. Try again or refresh the board.');
@@ -50,26 +62,31 @@ const Practice = () => {
 
             try {
                 const data = await new Promise((resolve) => {
-                    socket.emit('requestAIMove', { fen, level: difficulty }, (response) => resolve(response));
+                    socket.emit('requestAIMove', { fen, level: difficulty }, (response) => {
+                        console.log('[Practice][AI] requestAIMove <-', { requestId, response });
+                        resolve(response);
+                    });
                 });
+
+                if (cancelled || aiRequestIdRef.current !== requestId) {
+                    return;
+                }
 
                 if (!data?.success || !data.move) {
                     throw new Error(data?.error || 'Stockfish did not return a move');
                 }
 
-                if (!cancelled) {
-                    dispatch(makeMove(data.move));
-                    setStatus(`Stockfish played ${data.analysis?.bestMove?.san || `${data.move.from}-${data.move.to}`}.`);
-                }
+                dispatch(makeMove(data.move));
+                setStatus(`Stockfish played ${data.analysis?.bestMove?.san || `${data.move.from}-${data.move.to}`}.`);
             } catch (error) {
-                if (!cancelled) {
+                if (!cancelled && aiRequestIdRef.current === requestId) {
                     setStatus(error.message || 'Stockfish move failed');
                 }
             } finally {
-                if (!cancelled) {
-                    if (timeoutId) {
-                        window.clearTimeout(timeoutId);
-                    }
+                if (timeoutId) {
+                    window.clearTimeout(timeoutId);
+                }
+                if (!cancelled && aiRequestIdRef.current === requestId) {
                     setAiThinking(false);
                 }
             }
@@ -83,7 +100,7 @@ const Practice = () => {
                 window.clearTimeout(timeoutId);
             }
         };
-    }, [aiThinking, difficulty, dispatch, fen, isGameOver, turn]);
+    }, [difficulty, dispatch, fen, isGameOver, turn]);
 
     return (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-auto flex max-w-7xl flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">

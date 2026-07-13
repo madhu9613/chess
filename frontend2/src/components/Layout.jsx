@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Home, User, Cpu, Users, ChevronLeft, ChevronRight, Eye, LogIn, LogOut, Sparkles, Radar } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import NotificationToaster from './NotificationToaster';
 
 const Layout = ({ children }) => {
     const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -19,6 +20,7 @@ const Layout = ({ children }) => {
 
     return (
         <div className="app-shell min-h-screen text-[#f4efe6]">
+            <NotificationToaster />
             <div className="pointer-events-none fixed inset-0 subtle-grid opacity-25" />
 
             <div className={`fixed left-0 top-0 z-50 h-full transition-all duration-300 ${sidebarOpen ? 'w-72' : 'w-24'}`}>
@@ -30,7 +32,7 @@ const Layout = ({ children }) => {
                         {sidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
                     </button>
 
-                    <div className="mt-6 flex h-full flex-col">
+                    <div className="mt-6 flex h-full min-h-0 flex-col">
                         <div className="mb-8 text-center">
                             {sidebarOpen ? (
                                 <h1 className="text-2xl font-bold tracking-[0.35em] text-gradient uppercase">
@@ -65,28 +67,52 @@ const Layout = ({ children }) => {
                         </nav>
 
                         <div className="mt-auto rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-white/72">
-                            <div className="text-xs uppercase tracking-[0.35em] text-white/40">Mode</div>
-                            <div className="mt-2 font-semibold text-white">Sharp positions, clean interface.</div>
-                            <div className="mt-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/70">
-                                <Sparkles size={14} className="text-amber-300" />
-                                {isAuthenticated ? user?.name : 'Guest spectator mode'}
-                            </div>
-                            <div className="mt-3 flex gap-2">
-                                {isAuthenticated ? (
-                                    <button
-                                        onClick={logout}
-                                        className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/80 transition-colors hover:bg-white/10"
-                                    >
-                                        <LogOut size={14} />
-                                        Logout
-                                    </button>
-                                ) : (
-                                    <Link to="/auth" className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-amber-300/20 bg-amber-300/15 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-amber-300/25">
-                                        <LogIn size={14} />
-                                        Sign in
-                                    </Link>
-                                )}
-                            </div>
+                            {sidebarOpen ? (
+                                <>
+                                    <div className="text-xs uppercase tracking-[0.35em] text-white/40">Mode</div>
+                                    <div className="mt-2 font-semibold text-white">Sharp positions, clean interface.</div>
+                                    <div className="mt-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/70">
+                                        <Sparkles size={14} className="text-amber-300" />
+                                        {isAuthenticated ? user?.name : 'Guest spectator mode'}
+                                    </div>
+                                    <div className="mt-3 flex gap-2">
+                                        {isAuthenticated ? (
+                                            <button
+                                                onClick={logout}
+                                                className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/80 transition-colors hover:bg-white/10"
+                                            >
+                                                <LogOut size={14} />
+                                                Logout
+                                            </button>
+                                        ) : (
+                                            <Link to="/auth" className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-amber-300/20 bg-amber-300/15 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-amber-300/25">
+                                                <LogIn size={14} />
+                                                Sign in
+                                            </Link>
+                                        )}
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="flex justify-center">
+                                    {isAuthenticated ? (
+                                        <button
+                                            onClick={logout}
+                                            title="Logout"
+                                            className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/85 transition-colors hover:bg-white/10"
+                                        >
+                                            <LogOut size={16} />
+                                        </button>
+                                    ) : (
+                                        <Link
+                                            to="/auth"
+                                            title="Sign in"
+                                            className="flex h-10 w-10 items-center justify-center rounded-xl border border-amber-300/20 bg-amber-300/15 text-white transition-colors hover:bg-amber-300/25"
+                                        >
+                                            <LogIn size={16} />
+                                        </Link>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

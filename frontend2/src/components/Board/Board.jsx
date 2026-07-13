@@ -11,7 +11,7 @@ import {
 } from '../../store/gameSlice';
 import Pieces from '../Pieces/Pieces';
 
-const Board = ({ reversed = false, roomId = null, isMultiplayer = false, isSpectator = false, practiceColor = null }) => {
+const Board = ({ reversed = false, roomId = null, isMultiplayer = false, isSpectator = false, practiceColor = null, showTurnIndicator = true }) => {
     const dispatch = useDispatch();
     const turn = useSelector(selectTurn);
     const isCheck = useSelector(selectIsCheck);
@@ -76,34 +76,35 @@ const Board = ({ reversed = false, roomId = null, isMultiplayer = false, isSpect
                 <Pieces reversed={reversed} roomId={roomId} isMultiplayer={isMultiplayer} isSpectator={isSpectator} practiceColor={practiceColor} />
             </div>
 
-            {/* Turn Indicator */}
-            <div className="mt-6 flex justify-center">
-                <motion.div 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`px-6 py-3 rounded-xl font-bold text-lg backdrop-blur-sm border transition-all duration-300 ${
-                        isCheck 
-                            ? 'bg-red-500/30 border-red-500/60 text-red-300 shadow-lg shadow-red-500/30 animate-pulse' 
-                            : 'bg-accent/20 border-accent/40 text-accent/90'
-                    }`}
-                >
-                    {!isGameOver && (
-                        <div className="flex items-center gap-2">
-                            <span>{turn === 'w' ? '⚪' : '⚫'}</span>
-                            <span>{turn === 'w' ? "White's Turn" : "Black's Turn"}</span>
-                            {isCheck && (
-                                <motion.span 
-                                    animate={{ scale: [1, 1.2, 1] }}
-                                    transition={{ duration: 0.6, repeat: Infinity }}
-                                    className="ml-2"
-                                >
-                                     CHECK!
-                                </motion.span>
-                            )}
-                        </div>
-                    )}
-                </motion.div>
-            </div>
+            {showTurnIndicator && (
+                <div className="mt-6 flex justify-center">
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`px-6 py-3 rounded-xl font-bold text-lg backdrop-blur-sm border transition-all duration-300 ${
+                            isCheck
+                                ? 'bg-red-500/30 border-red-500/60 text-red-300 shadow-lg shadow-red-500/30 animate-pulse'
+                                : 'bg-accent/20 border-accent/40 text-accent/90'
+                        }`}
+                    >
+                        {!isGameOver && (
+                            <div className="flex items-center gap-2">
+                                <span>{turn === 'w' ? '⚪' : '⚫'}</span>
+                                <span>{turn === 'w' ? "White's Turn" : "Black's Turn"}</span>
+                                {isCheck && (
+                                    <motion.span
+                                        animate={{ scale: [1, 1.2, 1] }}
+                                        transition={{ duration: 0.6, repeat: Infinity }}
+                                        className="ml-2"
+                                    >
+                                         CHECK!
+                                    </motion.span>
+                                )}
+                            </div>
+                        )}
+                    </motion.div>
+                </div>
+            )}
         </div>
     );
 };
