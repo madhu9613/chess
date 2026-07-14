@@ -51,5 +51,5 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Stockfish service running on port ${PORT} with 2 workers`);
+    console.log(`Stockfish service running on port ${PORT} with 1 workers`);
 });
