@@ -6,7 +6,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 class WorkerPool {
-    constructor(size = 2) {
+    // due to run memory out i am using  1 worker lets see in docker i have 2;
+    constructor(size = 1) {
         this.size = size;
         this.workers = [];
         this.taskQueue = [];

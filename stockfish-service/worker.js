@@ -3,9 +3,9 @@ import { ChessGame } from '@mady9613/chess-engine';
 
 // ----- constants & helpers -----
 const LEVELS = {
-    easy: { skillLevel: 4, depth: 8 },
-    medium: { skillLevel: 10, depth: 12 },
-    hard: { skillLevel: 18, depth: 16 },
+    easy: { skillLevel: 4, depth: 6 },
+    medium: { skillLevel: 10, depth: 10 },
+    hard: { skillLevel: 18, depth: 14 },
 };
 
 const toAlgebraic = (row, col) => `${String.fromCharCode(97 + col)}${8 - row}`;
@@ -63,7 +63,8 @@ const initializeEngine = () => {
                 engine = eng;
                 engine.sendCommand('uci');
                 engine.sendCommand('setoption name Threads value 1');
-                engine.sendCommand('setoption name Hash value 16');
+                // for production changing hash to 8 as its a free deployment 
+                engine.sendCommand('setoption name Hash value 8');
                 engine.sendCommand('setoption name UCI_ShowWDL value true');
                 engine.sendCommand('isready');
             })
