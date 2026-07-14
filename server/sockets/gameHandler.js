@@ -1,10 +1,10 @@
 import Room from '../models/Room.js';
 import Game from '../models/Game.js';
 import { validateMove } from '../utils/chessValidator.js';
-import { chooseAIMove } from '../utils/socketfish.js';
 import { START_FEN, buildFFN } from '../utils/ffn.js';
 import { redisClient } from '../config/redis.js';
 import { enqueueNotification } from '../queues/notificationQueue.js';
+import axios from 'axios';
 
 const TIME_CONTROLS = {
     '5+0': 5 * 60 * 1000,
@@ -1025,10 +1025,13 @@ export default (io, socket) => {
         }
     });
 
+
+    /// ai request ;
     socket.on('requestAIMove', async (data, callback) => {
         try {
             const { fen, level = 'medium' } = data || {};
             const ack = typeof callback === 'function' ? callback : null;
+
             console.log('[Socket][AI] requestAIMove received', {
                 socketId: socket.id,
                 hasAck: Boolean(ack),
@@ -1041,8 +1044,15 @@ export default (io, socket) => {
                 return ack?.({ success: false, error: 'fen is required' });
             }
 
-            const result = await chooseAIMove(fen, level);
-            if (!result?.move) {
+            const STOCKFISH_URL = process.env.STOCKFISH_SERVICE_URL || 'http://localhost:3001';
+            const response = await axios.post(`${STOCKFISH_URL}/move`, { fen, level }, { timeout: 20000 });
+
+            if (!response.data.success) {
+                throw new Error(response.data.error || 'Stockfish service error');
+            }
+
+            const result = response.data; // already has { success: true, move, analysis, ... }
+            if (!result.move) {
                 console.warn('[Socket][AI] requestAIMove: no move returned');
                 return ack?.({ success: false, error: 'Stockfish did not return a move' });
             }
@@ -1056,9 +1066,19 @@ export default (io, socket) => {
             return ack?.({ success: true, ...result });
         } catch (err) {
             console.error('AI move request error:', err);
-            return (typeof callback === 'function' ? callback : null)?.({ success: false, error: err.message || 'Unable to get AI move' });
+            if (err.code === 'ECONNABORTED') {
+                return (typeof callback === 'function' ? callback : null)?.({
+                    success: false,
+                    error: 'Stockfish service timed out'
+                });
+            }
+            return (typeof callback === 'function' ? callback : null)?.({
+                success: false,
+                error: err.message || 'Unable to get AI move'
+            });
         }
     });
+
 
     socket.on('disconnect', async () => {
         console.log('Client disconnected:', socket.id);
