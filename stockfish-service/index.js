@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const pool = new WorkerPool(2); 
+const pool = new WorkerPool(1); 
 
 app.post('/move', async (req, res) => {
     const { fen, level = 'medium' } = req.body || {};
