@@ -1,57 +1,52 @@
 services:
 
-  # server:
-  #   build:
-  #     context: ./server
-
-  #   container_name: chess-server
-
-  #   ports:
-  #     - "5000:5000"
-
-  #   env_file:
-  #     - ./server/.env
-
-  #   depends_on:
-  #     - redis
-
-  #   restart: unless-stopped
+  server:
+    build:
+      context: ./server
+    container_name: chess-server
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./server/.env.docker
+    depends_on:
+      - redis
+      - stockfish-service
+    restart: unless-stopped
 
 
-  # frontend:
-  #   build:
-  #     context: ./frontend2
-
-  #   container_name: chess-frontend
-
-  #   ports:
-  #     - "3000:80"
-
-  #   depends_on:
-  #     - server
-
-  #   restart: unless-stopped
+  frontend:
+    build:
+      context: ./frontend2
+    container_name: chess-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - server
+    restart: unless-stopped
 
 
   redis:
     image: redis:7-alpine
-
     container_name: chess-redis
-
     ports:
       - "6379:6379"
-
     volumes:
       - redis-data:/data
-
     command:
       - redis-server
       - --appendonly
-      - yes
+      - "yes"
+    restart: unless-stopped
 
+
+  stockfish-service:
+    build:
+      context: ./stockfish-service
+    container_name: chess-stockfish
+    ports:
+      - "3001:3001"
     restart: unless-stopped
 
 
 volumes:
-
   redis-data:
