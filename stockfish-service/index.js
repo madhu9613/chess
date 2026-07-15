@@ -6,7 +6,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const pool = new WorkerPool(1); 
+// using worker 2  for docker
+const pool = new WorkerPool(2); 
 
 app.post('/move', async (req, res) => {
     const { fen, level = 'medium' } = req.body || {};

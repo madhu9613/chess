@@ -1,11 +1,12 @@
-import stockfish from 'stockfish';
+import { spawn } from 'child_process';
 import { ChessGame } from '@mady9613/chess-engine';
+import path from 'path';
 
 // ----- constants & helpers -----
 const LEVELS = {
-    easy: { skillLevel: 4, depth: 6 },
-    medium: { skillLevel: 10, depth: 10 },
-    hard: { skillLevel: 18, depth: 14 },
+    easy: { skillLevel: 4, depth: 8 },
+    medium: { skillLevel: 10, depth: 12 },
+    hard: { skillLevel: 18, depth: 16 },
 };
 
 const toAlgebraic = (row, col) => `${String.fromCharCode(97 + col)}${8 - row}`;
@@ -28,53 +29,62 @@ const moveToSan = (fen, uciMove) => {
 
 const getLevelSettings = (level) => LEVELS[level] || LEVELS.medium;
 
-// ----- engine initialization (silent) -----
-let engine = null;
+// ----- spawn Stockfish binary -----
+let engineProcess = null;
 let engineReady = false;
+
+const stockfishPath = process.env.STOCKFISH_PATH || 'stockfish'; // default: in PATH
 
 const initializeEngine = () => {
     return new Promise((resolve, reject) => {
-        const originalLog = console.log;
+        engineProcess = spawn(stockfishPath, [], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+        });
 
-        console.log = (...args) => {
-            const line = args.map(String).join(' ');
+        let readyResolved = false;
 
-            if (
-                line.startsWith('option name') ||
-                line.startsWith('id ') ||
-                line.startsWith('uciok') ||
-                (line.includes('Stockfish') && line.includes('WASM'))
-            ) {
-                return; // suppress
+        engineProcess.stdout.on('data', (data) => {
+            const lines = data.toString().split('\n').filter(Boolean);
+            for (const line of lines) {
+                // Skip verbose config lines
+                if (
+                    line.startsWith('option name') ||
+                    line.startsWith('id ') ||
+                    line.startsWith('uciok') ||
+                    (line.includes('Stockfish') && line.includes('by'))
+                ) {
+                    continue;
+                }
+
+                if (line === 'readyok') {
+                    engineReady = true;
+                    if (!readyResolved) {
+                        readyResolved = true;
+                        resolve();
+                    }
+                }
             }
+        });
 
-            if (line === 'readyok') {
-                engineReady = true;
-                console.log = originalLog; // restore
-                resolve();
-                return;
-            }
+        engineProcess.stderr.on('data', (data) => {
+            console.error(`Stockfish stderr: ${data}`);
+        });
 
-            originalLog(...args);
-        };
+        engineProcess.on('error', (err) => {
+            reject(new Error(`Failed to start Stockfish: ${err.message}`));
+        });
 
-        stockfish()
-            .then((eng) => {
-                engine = eng;
-                engine.sendCommand('uci');
-                engine.sendCommand('setoption name Threads value 1');
-                // for production changing hash to 8 as its a free deployment 
-                engine.sendCommand('setoption name Hash value 8');
-                engine.sendCommand('setoption name UCI_ShowWDL value true');
-                engine.sendCommand('isready');
-            })
-            .catch((err) => {
-                console.log = originalLog;
-                reject(err);
-            });
+        // Send UCI commands
+        const hashSize = parseInt(process.env.STOCKFISH_HASH) || 8;
+        engineProcess.stdin.write('uci\n');
+        engineProcess.stdin.write(`setoption name Threads value 1\n`);
+        engineProcess.stdin.write(`setoption name Hash value ${hashSize}\n`);
+        engineProcess.stdin.write('setoption name UCI_ShowWDL value true\n');
+        engineProcess.stdin.write('isready\n');
     });
 };
 
+// ----- parse helpers (same as before) -----
 const parseScore = (line) => {
     const mateMatch = line.match(/score mate (-?\d+)/);
     if (mateMatch) return { mate: Number(mateMatch[1]), cp: null };
@@ -105,14 +115,13 @@ const buildNotes = (result) => {
     return notes;
 };
 
-// ----- search execution (console.log interception) -----
+// ----- search execution using stdin/stdout -----
 const collectSearch = async ({ fen, level, multiPV = 1, mode = 'move' }) => {
     if (!engineReady) {
         await initializeEngine();
     }
 
     const settings = getLevelSettings(level);
-    const previousLog = console.log;
     const infoByPv = new Map();
     let finished = false;
 
@@ -127,80 +136,80 @@ const collectSearch = async ({ fen, level, multiPV = 1, mode = 'move' }) => {
             if (finished) return;
             finished = true;
             clearTimeout(timeout);
-            console.log = previousLog;
+            // Remove stdout listener
+            engineProcess.stdout.removeListener('data', stdoutHandler);
         };
 
-        // Override console.log to capture engine output
-        console.log = (...args) => {
-            const line = args.map(String).join(' ');
+        // This handler will be temporarily attached for this search
+        const stdoutHandler = (data) => {
+            const lines = data.toString().split('\n').filter(Boolean);
+            for (const line of lines) {
+                if (line.startsWith('info ')) {
+                    const parsed = parseInfoLine(line);
+                    infoByPv.set(parsed.multipv, parsed);
+                    continue;
+                }
 
-            if (line.startsWith('info ')) {
-                const parsed = parseInfoLine(line);
-                infoByPv.set(parsed.multipv, parsed);
-                // optionally pass through if you want to see analysis in logs
-                // previousLog(...args);
-                return;
+                if (line.startsWith('bestmove ')) {
+                    const bestMoveText = line.split(' ')[1];
+                    const bestMove = fromUciMove(bestMoveText);
+                    const parsedInfo = Array.from(infoByPv.values()).sort((a, b) => a.multipv - b.multipv);
+
+                    const topMoves = parsedInfo
+                        .slice(0, multiPV)
+                        .map((info, index) => ({
+                            multipv: info.multipv || index + 1,
+                            uci: info.pv[0] || bestMoveText,
+                            san: moveToSan(fen, info.pv[0] || bestMoveText),
+                            score: info.score.mate !== null
+                                ? (info.score.mate > 0 ? 100000 - info.score.mate : -100000 - info.score.mate)
+                                : (info.score.cp ?? 0),
+                            depth: info.depth,
+                        }));
+
+                    const bestInfo = topMoves[0] || null;
+                    const evaluation = bestInfo
+                        ? {
+                            score: bestInfo.score,
+                            label: bestInfo.score > 80 ? 'White is better' : bestInfo.score < -80 ? 'Black is better' : 'Balanced',
+                            perspective: fen.split(' ')[1] || 'w',
+                        }
+                        : {
+                            score: 0,
+                            label: 'Balanced',
+                            perspective: fen.split(' ')[1] || 'w',
+                        };
+
+                    cleanup();
+                    const game = new ChessGame();
+                    game.loadFEN(fen);
+                    const legalMoveCount = game.getAllValidMoves().length;
+
+                    resolve({
+                        bestMove,
+                        bestMoveUci: bestMoveText,
+                        topMoves,
+                        evaluation,
+                        turn: fen.split(' ')[1] || 'w',
+                        depth: settings.depth,
+                        legalMoveCount,
+                    });
+                    return;
+                }
             }
-
-            if (line.startsWith('bestmove ')) {
-                const bestMoveText = line.split(' ')[1];
-                const bestMove = fromUciMove(bestMoveText);
-                const parsedInfo = Array.from(infoByPv.values()).sort((a, b) => a.multipv - b.multipv);
-
-                const topMoves = parsedInfo
-                    .slice(0, multiPV)
-                    .map((info, index) => ({
-                        multipv: info.multipv || index + 1,
-                        uci: info.pv[0] || bestMoveText,
-                        san: moveToSan(fen, info.pv[0] || bestMoveText),
-                        score: info.score.mate !== null
-                            ? (info.score.mate > 0 ? 100000 - info.score.mate : -100000 - info.score.mate)
-                            : (info.score.cp ?? 0),
-                        depth: info.depth,
-                    }));
-
-                const bestInfo = topMoves[0] || null;
-                const evaluation = bestInfo
-                    ? {
-                        score: bestInfo.score,
-                        label: bestInfo.score > 80 ? 'White is better' : bestInfo.score < -80 ? 'Black is better' : 'Balanced',
-                        perspective: fen.split(' ')[1] || 'w',
-                    }
-                    : {
-                        score: 0,
-                        label: 'Balanced',
-                        perspective: fen.split(' ')[1] || 'w',
-                    };
-
-                cleanup();
-                // Compute legal move count for analysis
-                const game = new ChessGame();
-                game.loadFEN(fen);
-                const legalMoveCount = game.getAllValidMoves().length;
-
-                resolve({
-                    bestMove,
-                    bestMoveUci: bestMoveText,
-                    topMoves,
-                    evaluation,
-                    turn: fen.split(' ')[1] || 'w',
-                    depth: settings.depth,
-                    legalMoveCount,
-                });
-                return;
-            }
-
-            // Pass through other logs (e.g., errors, warnings)
-            previousLog(...args);
         };
+
+        engineProcess.stdout.on('data', stdoutHandler);
 
         try {
-            engine.sendCommand(`setoption name Skill Level value ${settings.skillLevel}`);
-            engine.sendCommand(`setoption name MultiPV value ${multiPV}`);
-            engine.sendCommand('ucinewgame');
-            engine.sendCommand('isready');
-            engine.sendCommand(`position fen ${fen}`);
-            engine.sendCommand(`go depth ${mode === 'analysis' ? settings.depth : Math.max(4, settings.depth - 2)}`);
+            engineProcess.stdin.write(`setoption name Skill Level value ${settings.skillLevel}\n`);
+            engineProcess.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
+            engineProcess.stdin.write('ucinewgame\n');
+            engineProcess.stdin.write('isready\n');
+            // Wait for isready response? Not needed, we can send position immediately.
+            // But better to wait: but we'll just send and expect output.
+            engineProcess.stdin.write(`position fen ${fen}\n`);
+            engineProcess.stdin.write(`go depth ${mode === 'analysis' ? settings.depth : Math.max(4, settings.depth - 2)}\n`);
         } catch (error) {
             cleanup();
             reject(error);
