@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
-import { BookOpenText, FileText, History, Radar, RotateCcw } from 'lucide-react';
+import {
+    BookOpenText,
+    FileText,
+    History,
+    Radar,
+    RotateCcw,
+    Search,
+    X,
+    CheckCircle,
+    Star,
+    AlertTriangle,
+    XCircle,
+} from 'lucide-react';
 import { ChessGame } from '@mady9613/chess-engine';
 import Board from '../components/Board/Board';
 import MoveList from '../components/MoveList';
@@ -82,6 +94,20 @@ const reasonLabel = (value) => {
     return value;
 };
 
+// Helper to get icon and label for quality
+const getQualityIcon = (quality) => {
+    switch (quality) {
+        case 'Best Move':
+            return { icon: CheckCircle, label: 'Best' };
+        case 'Good Move':
+            return { icon: Star, label: 'Good' };
+        case 'Inaccuracy':
+            return { icon: AlertTriangle, label: 'Inaccuracy' };
+        default:
+            return { icon: XCircle, label: 'Bad' };
+    }
+};
+
 const Analysis = () => {
     const dispatch = useDispatch();
     const fen = useSelector(selectFEN);
@@ -105,6 +131,9 @@ const Analysis = () => {
     const [selectedMoveIndex, setSelectedMoveIndex] = useState(null);
     const [baselineFen] = useState(fen);
     const reviewRunRef = useRef(0);
+
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterStatus, setFilterStatus] = useState('all');
 
     const boardHistory = reviewGame?.moves || [];
     const selectedMoveReview = useMemo(() => {
@@ -368,267 +397,373 @@ const Analysis = () => {
         dispatch(syncGameState({ fen: baselineFen }));
     };
 
+    const filteredGames = useMemo(() => {
+        return recentGames.filter((game) => {
+            const matchesSearch =
+                game.roomCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (game.whitePlayer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    game.blackPlayer?.toLowerCase().includes(searchQuery.toLowerCase()));
+            if (filterStatus === 'all') return matchesSearch;
+            return matchesSearch && game.status === filterStatus;
+        });
+    }, [recentGames, searchQuery, filterStatus]);
+
     return (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-auto flex max-w-7xl flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
-            <div className="space-y-4">
-                <div className="surface-panel rounded-[1.75rem] p-5">
-                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-300/10 text-amber-200">
-                                <Radar size={20} />
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-auto flex max-w-7xl flex-col gap-6">
+            {/* Main two‑column layout: board + sidebar */}
+            <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-6 lg:items-start">
+                <div className="space-y-4">
+                    <div className="surface-panel rounded-[1.75rem] p-5">
+                        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-300/10 text-amber-200">
+                                    <Radar size={20} />
+                                </div>
+                                <div>
+                                    <div className="text-xs uppercase tracking-[0.35em] text-white/40">Analysis</div>
+                                    <h2 className="text-xl font-semibold text-white">Review positions, move lists, and recent games.</h2>
+                                    <p className="text-sm text-white/55">Stockfish analysis is separate from practice mode.</p>
+                                </div>
                             </div>
+                            <div className="flex flex-wrap gap-2 text-xs uppercase tracking-[0.3em] text-white/50">
+                                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">Review only on selection/import</span>
+                                {reviewLabel && (
+                                    <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-amber-100">
+                                        {reviewLabel}
+                                    </span>
+                                )}
+                                {moveReviewsLoading && (
+                                    <span className="rounded-full border border-blue-400/20 bg-blue-400/10 px-3 py-1 text-blue-100">
+                                        Reviewing {reviewProgress.current}/{reviewProgress.total}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="surface-panel rounded-[1.75rem] p-5">
+                        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                             <div>
-                                <div className="text-xs uppercase tracking-[0.35em] text-white/40">Analysis</div>
-                                <h2 className="text-xl font-semibold text-white">Review positions, move lists, and recent games.</h2>
-                                <p className="text-sm text-white/55">Stockfish analysis is separate from practice mode.</p>
+                                <div className="text-xs uppercase tracking-[0.35em] text-white/40">Board</div>
+                                <h3 className="mt-1 text-2xl font-semibold text-white">Centered analysis board</h3>
+                            </div>
+                            <div className="flex gap-2">
+                                {reviewGame && (
+                                    <button
+                                        onClick={clearReview}
+                                        className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10"
+                                    >
+                                        <RotateCcw size={16} />
+                                        Clear review
+                                    </button>
+                                )}
+                                <div className="text-sm text-white/60">
+                                    {reviewGame
+                                        ? analysisLoading || moveReviewsLoading
+                                            ? 'Stockfish is evaluating move quality...'
+                                            : 'Review ready.'
+                                        : 'Select or import a game to start review.'}
+                                </div>
                             </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 text-xs uppercase tracking-[0.3em] text-white/50">
-                            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">Review only on selection/import</span>
-                            {reviewLabel && <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-amber-100">{reviewLabel}</span>}
-                            {moveReviewsLoading && <span className="rounded-full border border-blue-400/20 bg-blue-400/10 px-3 py-1 text-blue-100">Reviewing {reviewProgress.current}/{reviewProgress.total}</span>}
+
+                        <div className="flex justify-center">
+                            <Board isSpectator />
                         </div>
+
+                        {reviewGame ? (
+                            <div className="mt-4">
+                                <MoveList title={`${reviewGame.label} Move List`} moves={boardHistory} />
+                            </div>
+                        ) : (
+                            <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/55">
+                                No review is loaded yet. Pick a recent game or import a FEN to inspect a position.
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                <div className="surface-panel rounded-[1.75rem] p-5">
-                    <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div>
-                            <div className="text-xs uppercase tracking-[0.35em] text-white/40">Board</div>
-                            <h3 className="mt-1 text-2xl font-semibold text-white">Centered analysis board</h3>
-                        </div>
+                <div className="w-full space-y-4 lg:w-[420px] lg:justify-self-end">
+                    <div className="surface-panel-soft rounded-3xl p-4">
+                        <h3 className="mb-2 text-lg font-semibold text-white">Stockfish Depth</h3>
                         <div className="flex gap-2">
-                            {reviewGame && (
+                            {LEVELS.map((level) => (
                                 <button
-                                    onClick={clearReview}
-                                    className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10"
+                                    key={level.id}
+                                    onClick={() => setDifficulty(level.id)}
+                                    className={`flex-1 cursor-pointer rounded-2xl py-2 capitalize transition-colors ${difficulty === level.id
+                                            ? 'border border-amber-300/20 bg-amber-300/15 text-white'
+                                            : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10'
+                                        }`}
                                 >
-                                    <RotateCcw size={16} />
-                                    Clear review
-                                </button>
-                            )}
-                            <div className="text-sm text-white/60">{reviewGame ? (analysisLoading || moveReviewsLoading ? 'Stockfish is evaluating move quality...' : 'Review ready.') : 'Select or import a game to start review.'}</div>
-                        </div>
-                    </div>
-
-                    <div className="flex justify-center">
-                        <Board isSpectator />
-                    </div>
-
-                    {reviewGame ? (
-                        <div className="mt-4">
-                            <MoveList title={`${reviewGame.label} Move List`} moves={boardHistory} />
-                        </div>
-                    ) : (
-                        <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/55">
-                            No review is loaded yet. Pick a recent game or import a FEN to inspect a position.
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            <div className="w-full space-y-4 lg:w-[420px] lg:justify-self-end">
-                <div className="surface-panel-soft rounded-3xl p-4">
-                    <h3 className="mb-2 text-lg font-semibold text-white">Stockfish Depth</h3>
-                    <div className="flex gap-2">
-                        {LEVELS.map((level) => (
-                            <button
-                                key={level.id}
-                                onClick={() => setDifficulty(level.id)}
-                                className={`flex-1 cursor-pointer rounded-2xl py-2 capitalize transition-colors ${difficulty === level.id
-                                    ? 'border border-amber-300/20 bg-amber-300/15 text-white'
-                                    : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10'
-                                    }`}
-                            >
-                                {level.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="surface-panel-soft rounded-3xl p-4">
-                    <div className="mb-3 flex items-center gap-2">
-                        <Radar size={18} className="text-amber-300" />
-                        <h3 className="text-lg font-semibold text-white">Import FEN</h3>
-                    </div>
-                    <textarea
-                        value={reviewFen}
-                        onChange={(event) => setReviewFen(event.target.value)}
-                        rows={4}
-                        placeholder="Paste a FEN to review"
-                        className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-white/30"
-                    />
-                    <button
-                        onClick={importFen}
-                        disabled={!reviewFen.trim()}
-                        className="mt-3 w-full rounded-2xl border border-amber-300/20 bg-amber-300/15 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-amber-300/25 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                        Review imported position
-                    </button>
-                </div>
-
-                <div className="surface-panel-soft rounded-3xl p-4">
-                    <div className="mb-3 flex items-center gap-2">
-                        <FileText size={18} className="text-amber-300" />
-                        <h3 className="text-lg font-semibold text-white">Import PGN</h3>
-                    </div>
-                    <textarea
-                        value={pgnInput}
-                        onChange={(event) => setPgnInput(event.target.value)}
-                        rows={6}
-                        placeholder="Paste PGN text. Example: 1. e4 e5 2. Nf3 Nc6"
-                        className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-white/30"
-                    />
-                    <button
-                        onClick={importPgn}
-                        disabled={!pgnInput.trim() || moveReviewsLoading}
-                        className="mt-3 w-full rounded-2xl border border-emerald-300/20 bg-emerald-300/15 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-300/25 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                        Import PGN and review every move
-                    </button>
-                    {pgnError && <div className="mt-3 rounded-2xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{pgnError}</div>}
-                </div>
-
-                <div className="surface-panel-soft rounded-3xl p-4">
-                    <div className="mb-3 flex items-center gap-2">
-                        <BookOpenText size={18} className="text-amber-300" />
-                        <h3 className="text-lg font-semibold text-white">Position Readout</h3>
-                    </div>
-
-                    {!reviewGame && !analysis ? (
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">
-                            Select a game or import a FEN to see a review.
-                        </div>
-                    ) : analysisLoading ? (
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">Analyzing current position...</div>
-                    ) : analysisError ? (
-                        <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">{analysisError}</div>
-                    ) : analysis ? (
-                        <div className="space-y-3 text-sm text-white/75">
-                            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                                <div className="text-xs uppercase tracking-[0.3em] text-white/35">Evaluation</div>
-                                <div className="mt-1 text-lg font-semibold text-white">{analysis.evaluation.label}</div>
-                                <div className="text-white/55">Score: {analysis.evaluation.score}</div>
-                                <div className="text-white/55">Turn: {analysis.turn === 'w' ? 'White' : 'Black'}</div>
-                            </div>
-
-                            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                                <div className="text-xs uppercase tracking-[0.3em] text-white/35">Best Move</div>
-                                <div className="mt-1 text-lg font-semibold text-white">{analysis.bestMove?.san || 'No move available'}</div>
-                                <div className="text-white/55">{analysis.legalMoveCount} legal moves</div>
-                                {selectedMoveReview && <div className="text-white/55">Move under review: {selectedMoveReview.moveNumber}{selectedMoveReview.side === 'White' ? '.' : '...'} {selectedMoveReview.san}</div>}
-                            </div>
-
-                            <div className="space-y-2 rounded-2xl border border-white/10 bg-black/20 p-3">
-                                <div className="text-xs uppercase tracking-[0.3em] text-white/35">Top Lines</div>
-                                {analysis.topMoves.map((move) => (
-                                    <div key={`${move.multipv}-${move.san}-${move.uci}`} className="rounded-2xl border border-white/10 bg-white/5 p-2">
-                                        <div className="font-semibold text-white">{move.san}</div>
-                                        <div className="text-xs text-white/50">Score {Math.round(move.score)}</div>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="space-y-2 rounded-2xl border border-white/10 bg-black/20 p-3">
-                                <div className="text-xs uppercase tracking-[0.3em] text-white/35">Notes</div>
-                                {analysis.notes.map((note) => (
-                                    <div key={note} className="text-white/70">{note}</div>
-                                ))}
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">Move the board or load a recent game to review the line.</div>
-                    )}
-                </div>
-
-                <div className="surface-panel-soft rounded-3xl p-4">
-                    <div className="mb-3 flex items-center gap-2">
-                        <Radar size={18} className="text-amber-300" />
-                        <h3 className="text-lg font-semibold text-white">Move-by-Move Review</h3>
-                    </div>
-
-                    {!reviewGame ? (
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">
-                            Load a recent game or import PGN to get good move, bad move, and suggestion details for every move.
-                        </div>
-                    ) : moveReviewsLoading ? (
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">
-                            Reviewing moves with Stockfish... {reviewProgress.current}/{reviewProgress.total}
-                        </div>
-                    ) : moveReviewsError ? (
-                        <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">{moveReviewsError}</div>
-                    ) : moveReviews.length === 0 ? (
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">No move review available.</div>
-                    ) : (
-                        <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
-                            {moveReviews.map((review) => (
-                                <button
-                                    key={`${review.ply}-${review.san}`}
-                                    onClick={() => jumpToMove(review)}
-                                    className={`w-full rounded-2xl border p-3 text-left transition-colors hover:bg-white/10 ${selectedMoveReview?.index === review.index ? 'border-amber-300/30 bg-amber-300/10' : 'border-white/10 bg-black/20'}`}
-                                >
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div className="text-sm font-semibold text-white">{review.moveNumber}{review.side === 'White' ? '.' : '...'} {review.san}</div>
-                                        <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${qualityTheme(review.quality)}`}>
-                                            {review.quality}
-                                        </span>
-                                    </div>
-                                    <div className="mt-2 text-xs text-white/70">{review.explanation}</div>
-                                    <div className="mt-2 text-xs text-white/55">Engine best: {review.bestMove?.san || 'N/A'} | Eval: {Math.round(review.evaluation?.score || 0)}</div>
-                                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/65">
-                                        {(review.suggestions || []).map((suggestion) => (
-                                            <span key={`${review.ply}-${suggestion.uci}-${suggestion.multipv}`} className="rounded-full border border-white/10 bg-white/5 px-2 py-1">
-                                                {suggestion.san} ({Math.round(suggestion.score)})
-                                            </span>
-                                        ))}
-                                    </div>
+                                    {level.label}
                                 </button>
                             ))}
                         </div>
-                    )}
-                </div>
-
-                <div className="surface-panel-soft rounded-3xl p-4">
-                    <div className="mb-3 flex items-center gap-2">
-                        <History size={18} className="text-amber-300" />
-                        <h3 className="text-lg font-semibold text-white">Recent Games</h3>
                     </div>
 
-                    {recentGamesLoading ? (
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">Loading recent games...</div>
-                    ) : recentGamesError ? (
-                        <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">{recentGamesError}</div>
-                    ) : recentGames.length === 0 ? (
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">No recent games available yet.</div>
-                    ) : (
-                        <div className="space-y-3">
-                            {recentGames.map((game) => {
-                                const movePreview = (game.moveHistory || []).slice(-6).map((move) => move.san).join(' · ');
+                    <div className="surface-panel-soft rounded-3xl p-4">
+                        <div className="mb-3 flex items-center gap-2">
+                            <Radar size={18} className="text-amber-300" />
+                            <h3 className="text-lg font-semibold text-white">Import FEN</h3>
+                        </div>
+                        <textarea
+                            value={reviewFen}
+                            onChange={(event) => setReviewFen(event.target.value)}
+                            rows={4}
+                            placeholder="Paste a FEN to review"
+                            className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-white/30"
+                        />
+                        <button
+                            onClick={importFen}
+                            disabled={!reviewFen.trim()}
+                            className="mt-3 w-full rounded-2xl border border-amber-300/20 bg-amber-300/15 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-amber-300/25 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            Review imported position
+                        </button>
+                    </div>
+
+                    <div className="surface-panel-soft rounded-3xl p-4">
+                        <div className="mb-3 flex items-center gap-2">
+                            <FileText size={18} className="text-amber-300" />
+                            <h3 className="text-lg font-semibold text-white">Import PGN</h3>
+                        </div>
+                        <textarea
+                            value={pgnInput}
+                            onChange={(event) => setPgnInput(event.target.value)}
+                            rows={6}
+                            placeholder="Paste PGN text. Example: 1. e4 e5 2. Nf3 Nc6"
+                            className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-white/30"
+                        />
+                        <button
+                            onClick={importPgn}
+                            disabled={!pgnInput.trim() || moveReviewsLoading}
+                            className="mt-3 w-full rounded-2xl border border-emerald-300/20 bg-emerald-300/15 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-300/25 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            Import PGN and review every move
+                        </button>
+                        {pgnError && (
+                            <div className="mt-3 rounded-2xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">
+                                {pgnError}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="surface-panel-soft rounded-3xl p-4">
+                        <div className="mb-3 flex items-center gap-2">
+                            <BookOpenText size={18} className="text-amber-300" />
+                            <h3 className="text-lg font-semibold text-white">Position Readout</h3>
+                        </div>
+
+                        {!reviewGame && !analysis ? (
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">
+                                Select a game or import a FEN to see a review.
+                            </div>
+                        ) : analysisLoading ? (
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">
+                                Analyzing current position...
+                            </div>
+                        ) : analysisError ? (
+                            <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">
+                                {analysisError}
+                            </div>
+                        ) : analysis ? (
+                            <div className="space-y-3 text-sm text-white/75">
+                                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                                    <div className="text-xs uppercase tracking-[0.3em] text-white/35">Evaluation</div>
+                                    <div className="mt-1 text-lg font-semibold text-white">{analysis.evaluation.label}</div>
+                                    <div className="text-white/55">Score: {analysis.evaluation.score}</div>
+                                    <div className="text-white/55">Turn: {analysis.turn === 'w' ? 'White' : 'Black'}</div>
+                                </div>
+
+                                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                                    <div className="text-xs uppercase tracking-[0.3em] text-white/35">Best Move</div>
+                                    <div className="mt-1 text-lg font-semibold text-white">{analysis.bestMove?.san || 'No move available'}</div>
+                                    <div className="text-white/55">{analysis.legalMoveCount} legal moves</div>
+                                    {selectedMoveReview && (
+                                        <div className="text-white/55">
+                                            Move under review: {selectedMoveReview.moveNumber}
+                                            {selectedMoveReview.side === 'White' ? '.' : '...'} {selectedMoveReview.san}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="space-y-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+                                    <div className="text-xs uppercase tracking-[0.3em] text-white/35">Top Lines</div>
+                                    {analysis.topMoves.map((move) => (
+                                        <div key={`${move.multipv}-${move.san}-${move.uci}`} className="rounded-2xl border border-white/10 bg-white/5 p-2">
+                                            <div className="font-semibold text-white">{move.san}</div>
+                                            <div className="text-xs text-white/50">Score {Math.round(move.score)}</div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="space-y-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+                                    <div className="text-xs uppercase tracking-[0.3em] text-white/35">Notes</div>
+                                    {analysis.notes.map((note) => (
+                                        <div key={note} className="text-white/70">{note}</div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">
+                                Move the board or load a recent game to review the line.
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Move-by-Move Review – with visual icons */}
+                    <div className="surface-panel-soft rounded-3xl p-4">
+                        <div className="mb-3 flex items-center gap-2">
+                            <Radar size={18} className="text-amber-300" />
+                            <h3 className="text-lg font-semibold text-white">Move‑by‑Move Review</h3>
+                        </div>
+
+                        {!reviewGame ? (
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">
+                                Load a recent game or import PGN to get good move, bad move, and suggestion details for every move.
+                            </div>
+                        ) : moveReviewsLoading ? (
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">
+                                Reviewing moves with Stockfish… {reviewProgress.current}/{reviewProgress.total}
+                            </div>
+                        ) : moveReviewsError ? (
+                            <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">
+                                {moveReviewsError}
+                            </div>
+                        ) : moveReviews.length === 0 ? (
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">
+                                No move review available.
+                            </div>
+                        ) : (
+                            <div className="h-80 space-y-3 overflow-y-auto pr-1">
+                                {moveReviews.map((review) => {
+                                    const { icon: Icon, label } = getQualityIcon(review.quality);
+                                    return (
+                                        <button
+                                            key={`${review.ply}-${review.san}`}
+                                            onClick={() => jumpToMove(review)}
+                                            className={`w-full rounded-2xl border p-3 text-left transition-colors hover:bg-white/10 ${selectedMoveReview?.index === review.index
+                                                    ? 'border-amber-300/30 bg-amber-300/10'
+                                                    : 'border-white/10 bg-black/20'
+                                                }`}
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-semibold text-white">
+                                                        {review.moveNumber}
+                                                        {review.side === 'White' ? '.' : '...'} {review.san}
+                                                    </span>
+                                                    <span
+                                                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${qualityTheme(
+                                                            review.quality
+                                                        )}`}
+                                                    >
+                                                        <Icon size={12} />
+                                                        {label}
+                                                    </span>
+                                                </div>
+                                                <span className="text-xs text-white/50">
+                                                    Eval {Math.round(review.evaluation?.score || 0)}
+                                                </span>
+                                            </div>
+                                            <div className="mt-1 text-xs text-white/70">{review.explanation}</div>
+                                            <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/65">
+                                                {(review.suggestions || []).map((suggestion) => (
+                                                    <span
+                                                        key={`${review.ply}-${suggestion.uci}-${suggestion.multipv}`}
+                                                        className="rounded-full border border-white/10 bg-white/5 px-2 py-1"
+                                                    >
+                                                        {suggestion.san} ({Math.round(suggestion.score)})
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Full‑width Recent Games section */}
+            <div className="surface-panel-soft rounded-3xl p-4">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-2">
+                        <History size={18} className="text-amber-300" />
+                        <h3 className="text-lg font-semibold text-white">Recent Games</h3>
+                        <span className="text-sm text-white/40">({filteredGames.length})</span>
+                    </div>
+                    <div className="flex flex-1 items-center gap-3 sm:max-w-md">
+                        <div className="relative flex-1">
+                            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Search by room or player..."
+                                className="w-full rounded-2xl border border-white/10 bg-black/30 py-2 pl-9 pr-8 text-sm text-white placeholder:text-white/30 outline-none focus:border-amber-300/30"
+                            />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                        </div>
+                        <select
+                            value={filterStatus}
+                            onChange={(e) => setFilterStatus(e.target.value)}
+                            className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-300/30"
+                        >
+                            <option value="all">All</option>
+                            <option value="active">Active</option>
+                            <option value="completed">Completed</option>
+                            <option value="aborted">Aborted</option>
+                        </select>
+                    </div>
+                </div>
+
+                {recentGamesLoading ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">Loading recent games...</div>
+                ) : recentGamesError ? (
+                    <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">{recentGamesError}</div>
+                ) : filteredGames.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/55">
+                        {recentGames.length === 0 ? 'No recent games available yet.' : 'No games match your filters.'}
+                    </div>
+                ) : (
+                    <div className="max-h-72 overflow-y-auto pr-1">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            {filteredGames.map((game) => {
+                                const movePreview = (game.moveHistory || []).slice(-4).map((move) => move.san).join(' ');
                                 return (
                                     <button
                                         key={game.roomCode}
                                         onClick={() => inspectGame(game)}
-                                        className="w-full rounded-3xl border border-white/10 bg-white/5 p-4 text-left transition-transform hover:-translate-y-1"
+                                        className="rounded-2xl border border-white/10 bg-white/5 p-3 text-left transition-transform hover:-translate-y-0.5 hover:bg-white/10"
                                     >
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div>
-                                                <div className="text-xs uppercase tracking-[0.35em] text-white/35">Room</div>
-                                                <div className="mt-1 text-lg font-semibold text-white">{game.roomCode}</div>
-                                            </div>
-                                            <div className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-white/70">{game.status}</div>
+                                        <div className="flex items-center justify-between gap-1">
+                                            <span className="truncate text-sm font-semibold text-white">{game.roomCode}</span>
+                                            <span className="rounded-full border border-white/10 bg-black/20 px-1.5 py-0.5 text-[10px] text-white/70">
+                                                {game.status}
+                                            </span>
                                         </div>
-                                        <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-white/70">
-                                            <div className="rounded-2xl border border-white/10 bg-black/20 p-2">Moves: {game.moveCount || 0}</div>
-                                            <div className="rounded-2xl border border-white/10 bg-black/20 p-2">Winner: {winnerLabel(game.winner)}</div>
+                                        <div className="mt-1 flex items-center gap-2 text-xs text-white/60">
+                                            <span>{game.moveCount || 0} moves</span>
+                                            <span>·</span>
+                                            <span>{winnerLabel(game.winner)}</span>
                                         </div>
-                                        <div className="mt-2 text-xs uppercase tracking-[0.25em] text-white/45">Result: {reasonLabel(game.resultReason)}</div>
-                                        <div className="mt-3 text-sm text-white/55">{movePreview || 'No SAN preview available.'}</div>
+                                        {movePreview && <div className="mt-1 truncate text-[10px] text-white/40">{movePreview}</div>}
                                     </button>
                                 );
                             })}
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
         </motion.div>
     );
